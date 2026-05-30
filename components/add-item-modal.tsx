@@ -68,11 +68,14 @@ export function AddItemModal({ onAdd, defaultCategory }: AddItemModalProps) {
       id: result.id ?? crypto.randomUUID(),
       name: name.trim(),
       brand: brand.trim() || "Unbranded",
-      image: preview ?? "/placeholder.svg?height=300&width=220",
+      imageUrl: preview ?? "",
+      image: preview ?? undefined,
       category,
       tag: "Secondhand",
       wears: 0,
+      status: "wardrobe",
       listed: false,
+      readyToPartWith: false,
     })
     toast.success(`${name.trim()} added to your wardrobe.`)
     setOpen(false)

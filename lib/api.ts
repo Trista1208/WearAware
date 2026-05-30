@@ -65,6 +65,35 @@ export async function logDailyWear(itemId: string): Promise<{ ok: boolean }> {
   }
 }
 
+export interface PartnerStore {
+  id: string
+  name: string
+  description: string | null
+  city: string
+  country: string
+  commission_pct: number
+  contact_email: string | null
+  website_url: string | null
+}
+
+/**
+ * fetchStores(city?)
+ * GET http://localhost:3000/api/wardrobe/stores?city={city}
+ * Lists local second-hand partner stores. Returns [] on failure so the UI
+ * can fall back to its built-in mock directory.
+ */
+export async function fetchStores(city?: string): Promise<PartnerStore[]> {
+  try {
+    const url = city ? `${API_BASE}/stores?city=${encodeURIComponent(city)}` : `${API_BASE}/stores`
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`Stores fetch failed: ${res.status}`)
+    return await res.json()
+  } catch (err) {
+    console.log("[v0] fetchStores fell back to mock:", (err as Error).message)
+    return []
+  }
+}
+
 /**
  * executeTrade(itemId, matchUserId)
  * POST http://localhost:3000/api/wardrobe/trade
