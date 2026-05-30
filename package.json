@@ -1,0 +1,19 @@
+{
+  "name": "wearaware",
+  "version": "1.0.0",
+  "description": "WearAware — sustainable wardrobe tracker (monorepo)",
+  "private": true,
+  "scripts": {
+    "dev":            "concurrently --names \"BACKEND,FRONTEND\" --prefix-colors \"green,blue\" \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "backend":        "npm run dev --prefix backend",
+    "frontend":       "npm run dev --prefix frontend",
+    "install:all":    "npm install --prefix backend && npm install --prefix frontend",
+    "build:backend":  "npm run build --prefix backend",
+    "build:frontend": "npm run build --prefix frontend",
+    "build":          "npm run build:backend && npm run build:frontend",
+    "seed":           "npx ts-node --project backend/tsconfig.json backend/scripts/seed-test-user.ts"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
