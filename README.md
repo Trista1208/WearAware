@@ -19,13 +19,19 @@ WearAware/
 ## Quick Start
 
 ### 1 — Install dependencies
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/full_version_v1
 ```bash
 npm run install:all
 ```
 
 ### 2 — Configure environment
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/full_version_v1
 ```bash
 # Backend secrets
 cp backend/.env.example backend/.env
@@ -33,21 +39,30 @@ cp backend/.env.example backend/.env
 ```
 
 ### 3 — Run both servers together
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/full_version_v1
 ```bash
 npm install          # installs concurrently at root
 npm run dev          # starts backend (3000) + frontend (3001) simultaneously
 ```
 
 Or run them separately:
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/full_version_v1
 ```bash
 npm run backend      # only the API
 npm run frontend     # only the UI
 ```
 
 ### 4 — Seed test data
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/full_version_v1
 ```bash
 npm run seed
 # Creates demo user: demo.wearaware@gmail.com / WearAware2026!
@@ -55,11 +70,19 @@ npm run seed
 
 ## Tech Stack
 
+<<<<<<< HEAD
 | Layer      | Technology                         |
 | ---------- | ---------------------------------- |
 | Backend    | Node.js, TypeScript, Express       |
 | Database   | PostgreSQL via Supabase (hosted)   |
 | Auth       | Supabase Auth (JWT)                |
+=======
+| Layer      | Technology |
+|------------|------------|
+| Backend    | Node.js, TypeScript, Express |
+| Database   | PostgreSQL via Supabase (hosted) |
+| Auth       | Supabase Auth (JWT) |
+>>>>>>> origin/full_version_v1
 | Frontend   | Next.js 16, React 19, Tailwind CSS |
 | UI Library | Radix UI, shadcn/ui, Framer Motion |
 
@@ -74,11 +97,15 @@ npm run seed
 - **Analytics** — live wardrobe stats, wear trends, insights, savings estimates
 
 ## Test credentials
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/full_version_v1
 ```
 Email:    demo.wearaware@gmail.com
 Password: WearAware2026!
 ```
+<<<<<<< HEAD
 
 # WearAware — Backend API
 
@@ -289,3 +316,5 @@ The `image_urls` on `clothing_items` should point to Supabase Storage URLs uploa
 - **Auth**: Supabase Auth (JWT)
 - **Validation**: Zod
 - **Security**: Helmet, CORS
+=======
+>>>>>>> origin/full_version_v1

@@ -29,6 +29,7 @@ AGENTS.md
 # ── Logs ───────────────────────────────────────────────────────────────────────
 *.log
 npm-debug.log*
+<<<<<<< HEAD
 # Environment variables – NEVER commit these
 .env
 .env.local
@@ -52,3 +53,5 @@ npm-debug.log*
 .vscode/
 .idea/
 *.cursor
+=======
+>>>>>>> origin/full_version_v1
