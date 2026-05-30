@@ -1,190 +1,196 @@
-import { Response } from 'express';
-import { supabaseAdmin } from '../config/supabase';
-import { AuthRequest } from '../types';
+import { Request, Response } from 'express';
+import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws'; // 1. ADD THIS IMPORT
+import { analyzeClothingImage } from '../services/ai.service';
 
-export async function listItems(req: AuthRequest, res: Response): Promise<void> {
-  const userId = req.user!.id;
-  const { category, color, material, limit, offset } = req.query as {
-    category?: string;
-    color?: string;
-    material?: string;
-    limit: string;
-    offset: string;
-  };
+// 2. INJECT WEBSOCKET INTO THE CLIENT OPTIONS
+const supabase = createClient(
+    process.env.SUPABASE_URL || '',
+    process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+    {
+        auth: {
+            persistSession: false
+        },
+        realtime: {
+            transport: WebSocket as any
+        }
+    }
+);
 
-  let query = supabaseAdmin
-    .from('clothing_items')
-    .select('*', { count: 'exact' })
-    .eq('owner_id', userId)
-    .eq('is_active', true)
-    .order('created_at', { ascending: false })
-    .range(Number(offset), Number(offset) + Number(limit) - 1);
+export const uploadClothingItem = async (req: Request, res: Response) => {
+    try {
+        // 2. Catch the data sent from the mobile app
+        const { imageBase64, mimeType, userId } = req.body;
 
-  if (category) query = query.eq('category', category);
-  if (color)    query = query.ilike('color', `%${color}%`);
-  if (material) query = query.eq('material', material);
+        if (!imageBase64 || !userId) {
+            return res.status(400).json({ error: "Missing image or user ID." });
+        }
 
-  const { data, error, count } = await query;
+        console.log(`Processing new item upload for user: ${userId}`);
 
-  if (error) {
-    res.status(500).json({ success: false, error: error.message });
-    return;
-  }
+        // 3. Send the image to your Gemini AI Service!
+        const aiData = await analyzeClothingImage(imageBase64, mimeType || 'image/jpeg');
 
-  res.json({ success: true, data, meta: { total: count, limit: Number(limit), offset: Number(offset) } });
-}
+        // 4. Convert the base64 string back into a physical image file
+        const buffer = Buffer.from(imageBase64, 'base64');
+        const fileName = `${userId}/${Date.now()}-${Math.round(Math.random() * 1000)}.jpg`;
 
-export async function createItem(req: AuthRequest, res: Response): Promise<void> {
-  const userId = req.user!.id;
+        // 5. Upload that physical file to your new 'clothing-images' bucket
+        const { error: storageError } = await supabase
+            .storage
+            .from('clothing-images')
+            .upload(fileName, buffer, {
+                contentType: mimeType || 'image/jpeg',
+            });
 
-  const { data, error } = await supabaseAdmin
-    .from('clothing_items')
-    .insert({ ...req.body, owner_id: userId })
-    .select()
-    .single();
+        if (storageError) throw storageError;
 
-  if (error) {
-    res.status(400).json({ success: false, error: error.message });
-    return;
-  }
+        // 6. Get the public web link to the image we just saved
+        const { data: { publicUrl } } = supabase.storage.from('clothing-images').getPublicUrl(fileName);
 
-  res.status(201).json({ success: true, data });
-}
+        // 7. Save everything into the team's 'clothing_items' table
+        const { data: insertData, error: insertError } = await supabase
+            .from('clothing_items')
+            .insert({
+                owner_id: userId,
+                name: `${aiData.color} ${aiData.category}`, // e.g., "Blue tops"
+                category: aiData.category,
+                color: aiData.color,
+                secondary_colors: aiData.secondary_colors,
+                material: aiData.material,
+                image_urls: [publicUrl],
+                ai_tags: aiData.ai_tags,
+                ai_style_summary: aiData.ai_style_summary,
+                is_active: true
+            })
+            .select()
+            .single();
 
-export async function getItem(req: AuthRequest, res: Response): Promise<void> {
-  const userId = req.user!.id;
-  const { id }  = req.params;
+        if (insertError) throw insertError;
 
-  const { data, error } = await supabaseAdmin
-    .from('clothing_items')
-    .select(`
-      *,
-      wear_logs(id, worn_on, occasion, created_at)
-    `)
-    .eq('id', id)
-    .eq('owner_id', userId)
-    .single();
+        // 8. Send a success message and the new item back to the mobile app
+        return res.status(200).json({
+            success: true,
+            message: "Clothing item analyzed and added successfully!",
+            item: insertData
+        });
 
-  if (error || !data) {
-    res.status(404).json({ success: false, error: 'Item not found' });
-    return;
-  }
+    } catch (error) {
+        console.error("Upload Controller Error:", error);
+        return res.status(500).json({ success: false, error: "Server failed to process the item." });
+    }
+};
 
-  res.json({ success: true, data });
-}
+// Log a daily wear event and increment the counter
+export const logDailyWear = async (req: Request, res: Response) => {
+    try {
+        const { userId, itemId } = req.body; // Assuming frontend sends this in standard JSON
 
-export async function updateItem(req: AuthRequest, res: Response): Promise<void> {
-  const userId = req.user!.id;
-  const { id }  = req.params;
+        if (!userId || !itemId) {
+            return res.status(400).json({ success: false, error: "Missing userId or itemId" });
+        }
 
-  const { data, error } = await supabaseAdmin
-    .from('clothing_items')
-    .update(req.body)
-    .eq('id', id)
-    .eq('owner_id', userId)
-    .select()
-    .single();
+        // 1. Insert the log into daily_wear_logs
+        const { error: logError } = await supabase
+            .from('daily_wear_logs')
+            .insert({ user_id: userId, item_id: itemId });
 
-  if (error || !data) {
-    res.status(404).json({ success: false, error: 'Item not found or not yours' });
-    return;
-  }
+        if (logError) throw logError;
 
-  res.json({ success: true, data });
-}
+        // 2. Increment the wear_count on the main clothing_items table
+        // We use an RPC call if set up, or just fetch/update. 
+        // For a quick hackathon fix, fetch current count then add 1:
+        const { data: itemData } = await supabase
+            .from('clothing_items')
+            .select('wear_count')
+            .eq('id', itemId)
+            .single();
 
-export async function deleteItem(req: AuthRequest, res: Response): Promise<void> {
-  const userId = req.user!.id;
-  const { id }  = req.params;
+        const currentCount = itemData?.wear_count || 0;
 
-  const { error } = await supabaseAdmin
-    .from('clothing_items')
-    .update({ is_active: false })
-    .eq('id', id)
-    .eq('owner_id', userId);
+        const { error: updateError } = await supabase
+            .from('clothing_items')
+            .update({ wear_count: currentCount + 1 })
+            .eq('id', itemId);
 
-  if (error) {
-    res.status(400).json({ success: false, error: error.message });
-    return;
-  }
+        if (updateError) throw updateError;
 
-  res.json({ success: true, data: { message: 'Item removed from wardrobe' } });
-}
+        return res.json({ success: true, message: "Wear logged successfully!" });
 
-export async function logWear(req: AuthRequest, res: Response): Promise<void> {
-  const userId = req.user!.id;
-  const { id }  = req.params;
-  const { worn_on, occasion } = req.body as { worn_on?: string; occasion?: string };
+    } catch (error) {
+        console.error('Log Wear Error:', error);
+        return res.status(500).json({ success: false, error: 'Failed to log daily wear.' });
+    }
+};
 
-  // Verify item belongs to user
-  const { data: item } = await supabaseAdmin
-    .from('clothing_items')
-    .select('id')
-    .eq('id', id)
-    .eq('owner_id', userId)
-    .eq('is_active', true)
-    .single();
+// Execute a peer-to-peer trade
+export const executeTrade = async (req: Request, res: Response) => {
+    try {
+        const { itemId, matchUserId, myUserId } = req.body;
 
-  if (!item) {
-    res.status(404).json({ success: false, error: 'Item not found' });
-    return;
-  }
+        if (!itemId || !matchUserId || !myUserId) {
+            return res.status(400).json({ success: false, error: "Missing trade parameters" });
+        }
 
-  const { data, error } = await supabaseAdmin
-    .from('wear_logs')
-    .insert({ item_id: id, user_id: userId, worn_on: worn_on || new Date().toISOString().split('T')[0], occasion })
-    .select()
-    .single();
+        // 1. Record the completed trade in the logs
+        const { error: tradeError } = await supabase
+            .from('marketplace_trades')
+            .insert({
+                item_id: itemId,
+                requester_id: myUserId,
+                owner_id: matchUserId,
+                status: 'completed',
+                completed_at: new Date().toISOString()
+            });
 
-  if (error) {
-    res.status(400).json({ success: false, error: error.message });
-    return;
-  }
+        if (tradeError) throw tradeError;
 
-  res.status(201).json({ success: true, data });
-}
+        // 2. Swap the owner of the clothing item to the new user!
+        const { error: swapError } = await supabase
+            .from('clothing_items')
+            .update({ 
+                owner_id: myUserId, 
+                marketplace_status: 'private', // Take it off the market
+                wear_count: 0 // Reset wear count for the new owner!
+            })
+            .eq('id', itemId);
 
-export async function getWearHistory(req: AuthRequest, res: Response): Promise<void> {
-  const userId = req.user!.id;
-  const { id }  = req.params;
+        if (swapError) throw swapError;
 
-  const { data, error } = await supabaseAdmin
-    .from('wear_logs')
-    .select('*')
-    .eq('item_id', id)
-    .eq('user_id', userId)
-    .order('worn_on', { ascending: false });
+        return res.json({ success: true, message: "Trade executed perfectly!" });
 
-  if (error) {
-    res.status(500).json({ success: false, error: error.message });
-    return;
-  }
+    } catch (error) {
+        console.error('Execute Trade Error:', error);
+        return res.status(500).json({ success: false, error: 'Failed to execute trade.' });
+    }
+};
 
-  res.json({ success: true, data, meta: { total_wears: (data || []).length } });
-}
+// Fetch items for the 3D Carousel
+export const getWardrobeItems = async (req: Request, res: Response) => {
+    try {
+        const { category, userId } = req.query;
 
-export async function getRecentItems(req: AuthRequest, res: Response): Promise<void> {
-  const userId = req.user!.id;
+        if (!userId) {
+            return res.status(400).json({ success: false, error: "Missing user ID" });
+        }
 
-  // Most recently worn (last 30 days)
-  const { data: recentWears } = await supabaseAdmin
-    .from('wear_logs')
-    .select('item_id, worn_on, clothing_items(id, name, category, color, image_urls)')
-    .eq('user_id', userId)
-    .gte('worn_on', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0])
-    .order('worn_on', { ascending: false })
-    .limit(20);
+        let dbQuery = supabase
+            .from('clothing_items') // Using your correct table name!
+            .select('*')
+            .eq('owner_id', userId);
 
-  // Most frequently worn (by count over all time)
-  const { data: freqData } = await supabaseAdmin
-    .rpc('get_frequently_worn_items', { p_user_id: userId, p_limit: 10 })
-    .select('*');
+        if (category && category !== 'All') {
+            dbQuery = dbQuery.eq('category', category);
+        }
 
-  res.json({
-    success: true,
-    data: {
-      recently_worn:   recentWears  || [],
-      frequently_worn: freqData     || [],
-    },
-  });
-}
+        const { data, error } = await dbQuery;
+
+        if (error) throw error;
+
+        return res.json({ success: true, items: data });
+
+    } catch (error) {
+        console.error('Fetch Items Error:', error);
+        return res.status(500).json({ success: false, error: 'Failed to fetch wardrobe items.' });
+    }
+};
