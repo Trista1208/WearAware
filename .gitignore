@@ -29,3 +29,26 @@ AGENTS.md
 # ── Logs ───────────────────────────────────────────────────────────────────────
 *.log
 npm-debug.log*
+# Environment variables – NEVER commit these
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+*.cursor
