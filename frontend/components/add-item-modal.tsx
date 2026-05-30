@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { categories, type Category, type WardrobeItem } from "@/lib/wardrobe-data"
-import { uploadClothingItem, addWardrobeItem } from "@/lib/api"
+import { uploadClothingItem } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 interface AddItemModalProps {
@@ -62,28 +62,20 @@ export function AddItemModal({ onAdd, defaultCategory }: AddItemModalProps) {
       return
     }
     setSubmitting(true)
-
-    // Persist to backend (if auth token is present) and local state simultaneously
-    const [backendItem] = await Promise.all([
-      addWardrobeItem({
-        name: name.trim(),
-        brand: brand.trim() || undefined,
-        category: category.toLowerCase(),
-        condition: "good",
-      }),
-      // AI photo upload — handled by teammate, mocked for now
-      preview ? uploadClothingItem(preview) : Promise.resolve({ ok: true }),
-    ])
-
+    // uploadClothingItem(base64) -> POST http://localhost:3000/api/wardrobe/upload
+    const result = await uploadClothingItem(preview ?? "")
     onAdd({
-      id: backendItem?.id ?? crypto.randomUUID(),
+      id: result.id ?? crypto.randomUUID(),
       name: name.trim(),
       brand: brand.trim() || "Unbranded",
-      image: preview ?? "/placeholder.svg?height=300&width=220",
+      imageUrl: preview ?? "",
+      image: preview ?? undefined,
       category,
       tag: "Secondhand",
       wears: 0,
+      status: "wardrobe",
       listed: false,
+      readyToPartWith: false,
     })
     toast.success(`${name.trim()} added to your wardrobe.`)
     setOpen(false)
