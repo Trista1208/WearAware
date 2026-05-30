@@ -2,10 +2,11 @@
 
 import { useRef, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Camera, MessageSquareText, Sparkles, ThumbsDown, ThumbsUp, Upload } from "lucide-react"
+import { Bot, Camera, MessageSquareText, Sparkles, ThumbsDown, ThumbsUp, Upload } from "lucide-react"
 import { toast } from "sonner"
 import type { WardrobeItem } from "@/lib/wardrobe-data"
-import { getBuyAdvice, type BuyAdvice } from "@/lib/sustainability"
+import { apiAnalyzeGarment, apiGetPurchaseAdvice } from "@/lib/api"
+import { useAuth } from "@/lib/auth-context"
 import { cn } from "@/lib/utils"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
@@ -13,30 +14,90 @@ import { Button } from "@/components/ui/button"
 interface BuyTabProps {
   items: WardrobeItem[]
   onScoreAdjust: (delta: number) => void
+  onRequestAuth?: () => void
 }
 
 type InputMode = "describe" | "photo"
 
-export function BuyTab({ items, onScoreAdjust }: BuyTabProps) {
+interface AIAdviceResult {
+  verdict:      string
+  headline:     string
+  reason:       string
+  scoreDelta:   number
+  emoji:        string
+  visual?:      string  // wardrobe similarity analysis from visual analyzer
+}
+
+export function BuyTab({ items, onScoreAdjust, onRequestAuth }: BuyTabProps) {
+  const { user } = useAuth()
   const [visible, setVisible] = useState(false)
   const [mode, setMode] = useState<InputMode>("describe")
   const [description, setDescription] = useState("")
   const [preview, setPreview] = useState<string | null>(null)
-  const [advice, setAdvice] = useState<BuyAdvice | null>(null)
+  const [advice, setAdvice] = useState<AIAdviceResult | null>(null)
   const [loading, setLoading] = useState(false)
+  const [loadingMsg, setLoadingMsg] = useState("Analyzing…")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const runAdvice = async (text: string) => {
+    if (!user) {
+      toast.error("Sign in to use the AI advisor.")
+      onRequestAuth?.()
+      return
+    }
     if (!text.trim() && !preview) {
       toast.error("Describe or upload the piece you're considering.")
       return
     }
     setLoading(true)
-    await new Promise((r) => setTimeout(r, 700))
-    const result = getBuyAdvice(text || "new clothing item", items)
-    setAdvice(result)
-    onScoreAdjust(result.scoreDelta)
-    setLoading(false)
+    setAdvice(null)
+
+    try {
+      // Run visual analysis and purchase advice in parallel
+      setLoadingMsg(preview ? "Analyzing image with AI…" : "Consulting AI stylist…")
+
+      const [visualResult, purchaseResult] = await Promise.all([
+        // Visual Analyzer — image takes priority, falls back to text
+        preview
+          ? apiAnalyzeGarment({ image_url: preview, include_wardrobe: true })
+          : text.trim()
+          ? apiAnalyzeGarment({ description: text.trim(), include_wardrobe: true })
+          : Promise.resolve(null),
+
+        // Purchase advice from sustainability engine
+        apiGetPurchaseAdvice({
+          item_description: text || "uploaded clothing item",
+          is_second_hand: text.toLowerCase().includes("secondhand") || text.toLowerCase().includes("thrift") || text.toLowerCase().includes("vintage"),
+          is_local_brand: text.toLowerCase().includes("local"),
+        }),
+      ])
+
+      const delta = purchaseResult.estimated_score_delta ?? 0
+      setAdvice({
+        verdict:    purchaseResult.verdict,
+        headline:   `${purchaseResult.emoji} ${purchaseResult.verdict === "buy" ? "Good addition" : purchaseResult.verdict === "skip" ? "Consider skipping" : "Think twice"}`,
+        reason:     purchaseResult.advice,
+        scoreDelta: delta,
+        emoji:      purchaseResult.emoji,
+        visual:     visualResult?.analysis ?? undefined,
+      })
+      onScoreAdjust(delta)
+
+      if (purchaseResult.fast_fashion_warning) {
+        toast.warning(purchaseResult.fast_fashion_warning)
+      }
+    } catch (err) {
+      const msg = (err as Error).message
+      if (msg === "SESSION_EXPIRED") {
+        toast.error("Your session expired. Please sign in again.")
+        onRequestAuth?.()
+      } else {
+        toast.error("AI advisor unavailable. Check your connection.")
+        console.error("[buy-tab] AI error:", err)
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -52,14 +113,16 @@ export function BuyTab({ items, onScoreAdjust }: BuyTabProps) {
 
       <motion.button
         type="button"
-        onClick={() => setVisible(true)}
+        onClick={() => user ? setVisible(true) : onRequestAuth?.()}
         whileHover={{ y: -2 }}
         transition={{ type: "spring", stiffness: 260, damping: 28 }}
         className="rounded-3xl border border-border bg-card px-8 py-5 text-center shadow-[0_8px_32px_rgba(180,165,140,0.18)]"
       >
         <Sparkles className="mx-auto mb-2 h-5 w-5 text-primary" />
         <p className="font-medium text-foreground">Should I buy or should I not buy?</p>
-        <p className="mt-1 text-xs text-muted-foreground">Tap to open the purchase check</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {user ? "Tap to open the AI purchase check" : "Sign in to use the AI advisor"}
+        </p>
       </motion.button>
 
       <AnimatePresence>
@@ -157,7 +220,17 @@ export function BuyTab({ items, onScoreAdjust }: BuyTabProps) {
               disabled={loading}
               className="mt-4 w-full rounded-full"
             >
-              {loading ? "Analyzing wardrobe…" : "Get advice"}
+              {loading ? (
+                <span className="flex items-center gap-2">
+                  <Bot className="h-4 w-4 animate-pulse" />
+                  {loadingMsg}
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  Get AI advice
+                </span>
+              )}
             </Button>
 
             <AnimatePresence mode="wait">
@@ -167,38 +240,56 @@ export function BuyTab({ items, onScoreAdjust }: BuyTabProps) {
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0 }}
-                  className={cn(
-                    "mt-6 rounded-2xl border p-4",
-                    advice.verdict === "buy"
-                      ? "border-[rgba(122,140,110,0.35)] bg-[rgba(122,140,110,0.1)]"
-                      : "border-[rgba(180,120,110,0.35)] bg-[rgba(180,120,110,0.1)]",
-                  )}
+                  className="mt-6 space-y-3"
                 >
-                  <div className="flex items-start gap-3">
-                    {advice.verdict === "buy" ? (
-                      <ThumbsUp className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
-                    ) : (
-                      <ThumbsDown className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+                  {/* Purchase verdict card */}
+                  <div
+                    className={cn(
+                      "rounded-2xl border p-4",
+                      advice.verdict === "buy"
+                        ? "border-[rgba(122,140,110,0.35)] bg-[rgba(122,140,110,0.1)]"
+                        : "border-[rgba(180,120,110,0.35)] bg-[rgba(180,120,110,0.1)]",
                     )}
-                    <div>
-                      <p className="font-medium text-foreground">{advice.headline}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">{advice.reason}</p>
-                      {advice.scoreDelta !== 0 && (
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          Estimated score impact:{" "}
-                          <span
-                            className={cn(
-                              "font-medium",
-                              advice.scoreDelta > 0 ? "text-primary" : "text-destructive",
-                            )}
-                          >
-                            {advice.scoreDelta > 0 ? "+" : ""}
-                            {advice.scoreDelta}
-                          </span>
-                        </p>
+                  >
+                    <div className="flex items-start gap-3">
+                      {advice.verdict === "buy" ? (
+                        <ThumbsUp className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+                      ) : (
+                        <ThumbsDown className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
                       )}
+                      <div>
+                        <p className="font-medium text-foreground">{advice.headline}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{advice.reason}</p>
+                        {advice.scoreDelta !== 0 && (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Estimated score impact:{" "}
+                            <span
+                              className={cn(
+                                "font-medium",
+                                advice.scoreDelta > 0 ? "text-primary" : "text-destructive",
+                              )}
+                            >
+                              {advice.scoreDelta > 0 ? "+" : ""}
+                              {advice.scoreDelta}
+                            </span>
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
+
+                  {/* Visual analysis card (from the Sustainable Fashion Visual Analyzer) */}
+                  {advice.visual && (
+                    <details className="rounded-2xl border border-border bg-secondary/30 p-4 text-sm">
+                      <summary className="flex cursor-pointer items-center gap-2 font-medium text-foreground">
+                        <Bot className="h-4 w-4 text-primary" />
+                        Visual garment analysis
+                      </summary>
+                      <pre className="mt-3 whitespace-pre-wrap font-sans text-xs text-muted-foreground">
+                        {advice.visual}
+                      </pre>
+                    </details>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>

@@ -86,7 +86,13 @@ export function WardrobeTab({
                   score={awareScore}
                   className="absolute -right-2 -top-2 z-10 sm:-right-4 sm:-top-4"
                 />
-                <WardrobeCarousel key={selected} items={filtered} onSelect={setDetailItem} />
+                <WardrobeCarousel
+                  key={selected}
+                  items={filtered}
+                  onSelect={setDetailItem}
+                  onMoveToReady={onMoveToReady}
+                  onRemoveFromReady={onRemoveFromReady}
+                />
               </div>
 
               <ReadyToPartPanel
@@ -99,7 +105,12 @@ export function WardrobeTab({
         )}
       </AnimatePresence>
 
-      <GarmentDetailModal item={detailItem} onClose={() => setDetailItem(null)} />
+      <GarmentDetailModal
+        item={detailItem}
+        onClose={() => setDetailItem(null)}
+        onMoveToReady={onMoveToReady}
+        onRemoveFromReady={onRemoveFromReady}
+      />
     </section>
   )
 }

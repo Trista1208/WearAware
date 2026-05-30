@@ -40,11 +40,21 @@ async function apiFetch<T>(path: string, options: RequestInit = {}, fallback: T)
         ...(options.headers || {}),
       },
     })
+    // 401 = session expired — clear stale token so the user gets prompted to re-login
+    if (res.status === 401) {
+      clearToken()
+      throw new Error("SESSION_EXPIRED")
+    }
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
     const data = await res.json()
     return data.data ?? data
   } catch (err) {
-    console.warn(`[api] ${path} fell back to mock:`, (err as Error).message)
+    const msg = (err as Error).message
+    if (msg === "SESSION_EXPIRED") {
+      console.warn(`[api] ${path}: session expired, token cleared`)
+      throw err // re-throw so callers can handle it (e.g. show login modal)
+    }
+    console.warn(`[api] ${path} fell back to mock:`, msg)
     return fallback
   }
 }
@@ -184,6 +194,108 @@ export interface PartnerStore {
 export async function fetchStores(city?: string): Promise<PartnerStore[]> {
   const q = city ? `?city=${encodeURIComponent(city)}` : ""
   return apiFetch(`/stores${q}`, {}, [])
+}
+
+// ── AI ────────────────────────────────────────────────────────────────────────
+export interface AIAnalysis {
+  analysis:                string
+  model:                   string
+  tokens_used:             number
+  wardrobe_items_compared: number
+}
+
+export interface AIPurchaseAdvice {
+  verdict:                string
+  emoji:                  string
+  advice:                 string
+  reasons:                string[]
+  estimated_score_delta:  number
+  fast_fashion_warning:   string | null
+}
+
+export interface AIInsights {
+  insights: string[]
+}
+
+/** Visual Analyzer — pass image_url (https or base64) or a text description */
+export async function apiAnalyzeGarment(payload: {
+  image_url?:        string
+  description?:      string
+  include_wardrobe?: boolean
+}): Promise<AIAnalysis> {
+  return apiFetch("/ai/analyze", { method: "POST", body: JSON.stringify(payload) }, {
+    analysis:                "AI analysis unavailable — backend offline.",
+    model:                   "offline",
+    tokens_used:             0,
+    wardrobe_items_compared: 0,
+  })
+}
+
+/** AI-powered purchase advice via the sustainability endpoint */
+export async function apiGetPurchaseAdvice(payload: {
+  item_description?: string
+  brand?:            string
+  material?:         string
+  is_second_hand:    boolean
+  is_local_brand:    boolean
+}): Promise<AIPurchaseAdvice> {
+  return apiFetch("/sustainability/advice", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }, {
+    verdict:               "unknown",
+    emoji:                 "🤔",
+    advice:                "Could not reach the AI advisor. Please try again.",
+    reasons:               [],
+    estimated_score_delta: 0,
+    fast_fashion_warning:  null,
+  })
+}
+
+/** 3 AI wardrobe insights based on the user's stats */
+export async function apiWardrobeInsights(): Promise<string[]> {
+  const result = await apiFetch<AIInsights>("/ai/wardrobe-insights", {}, {
+    insights: ["Add more items to unlock AI insights."],
+  })
+  return result.insights ?? []
+}
+
+export interface TradeInsightResult {
+  verdict:        'great' | 'good' | 'neutral' | 'caution'
+  headline:       string
+  rationale:      string
+  sustainability: string
+  style_tip:      string
+  score_impact:   string
+  emoji:          string
+}
+
+/** AI trade verdict — call after a match is found */
+export async function apiTradeInsight(payload: {
+  wanted_item:  { name: string; category: string; brand?: string; tag?: string }
+  offered_item: { name: string; category: string; brand?: string; wears?: number; tag?: string }
+}): Promise<TradeInsightResult> {
+  return apiFetch("/ai/trade-insight", { method: "POST", body: JSON.stringify(payload) }, {
+    verdict:        "good",
+    headline:       "Solid circular fashion move.",
+    rationale:      "Swapping keeps both items in active use.",
+    sustainability: "Trading extends garment life and reduces waste.",
+    style_tip:      "Pair your new piece with what you already own.",
+    score_impact:   "+5 pts",
+    emoji:          "♻️",
+  })
+}
+
+/** Conversational style chat using the Visual Analyzer persona */
+export async function apiStyleChat(
+  message: string,
+  history: { role: "user" | "assistant"; content: string }[] = [],
+): Promise<string> {
+  const result = await apiFetch<{ reply: string }>("/ai/chat", {
+    method: "POST",
+    body: JSON.stringify({ message, history }),
+  }, { reply: "AI advisor is currently offline. Please try again shortly." })
+  return result.reply ?? ""
 }
 
 // ── Legacy stubs (backward compat with existing Shaurya UI components) ────────

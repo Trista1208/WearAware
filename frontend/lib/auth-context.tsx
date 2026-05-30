@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
-import { apiLogin, apiRegister, apiLogout, getToken, getUser } from "./api"
+import { apiLogin, apiRegister, apiLogout, getToken, getUser, clearToken } from "./api"
 
 export interface AuthUser {
   id: string
@@ -28,10 +28,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const t = getToken()
     const u = getUser()
     if (t && u) {
-      setTokenState(t)
-      setUserState(u as unknown as AuthUser)
+      // Validate token is still alive by hitting a lightweight endpoint
+      fetch(`${(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api")}/users/me`, {
+        headers: { Authorization: `Bearer ${t}` },
+      }).then(res => {
+        if (res.status === 401) {
+          // Token expired — wipe it so user is prompted to re-login
+          clearToken()
+        } else {
+          setTokenState(t)
+          setUserState(u as unknown as AuthUser)
+        }
+      }).catch(() => {
+        // Backend offline — keep the token optimistically
+        setTokenState(t)
+        setUserState(u as unknown as AuthUser)
+      }).finally(() => setIsLoading(false))
+    } else {
+      setIsLoading(false)
     }
-    setIsLoading(false)
   }, [])
 
   const login = async (email: string, password: string) => {

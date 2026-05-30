@@ -178,10 +178,10 @@ export default function Page() {
               <DailyTrackerTab items={trackerItems} onWear={logWear} onList={moveToReady} />
             )}
             {tab === "buy" && (
-              <BuyTab items={wardrobeItems} onScoreAdjust={handleScoreAdjust} />
+              <BuyTab items={wardrobeItems} onScoreAdjust={handleScoreAdjust} onRequestAuth={() => setShowAuth(true)} />
             )}
             {tab === "trade" && (
-              <TradeTab readyItems={readyItems} onTradeComplete={handleTradeComplete} />
+              <TradeTab readyItems={readyItems} onTradeComplete={handleTradeComplete} onRequestAuth={() => setShowAuth(true)} />
             )}
             {tab === "stores" && <StoresTab />}
           </motion.div>

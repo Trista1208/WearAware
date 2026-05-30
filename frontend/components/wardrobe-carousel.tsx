@@ -2,7 +2,7 @@
 
 import { type DragEvent, useCallback, useEffect, useRef, useState } from "react"
 import { motion } from "framer-motion"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, HeartHandshake, RotateCcw } from "lucide-react"
 import type { WardrobeItem } from "@/lib/wardrobe-data"
 import { getUsageFilter } from "@/lib/sustainability"
 import { GarmentImage } from "@/components/garment-image"
@@ -12,9 +12,11 @@ import { goldBorder, goldBorderSoft } from "@/lib/design-tokens"
 interface WardrobeCarouselProps {
   items: WardrobeItem[]
   onSelect: (item: WardrobeItem) => void
+  onMoveToReady?: (id: string) => void
+  onRemoveFromReady?: (id: string) => void
 }
 
-export function WardrobeCarousel({ items, onSelect }: WardrobeCarouselProps) {
+export function WardrobeCarousel({ items, onSelect, onMoveToReady, onRemoveFromReady }: WardrobeCarouselProps) {
   const [active, setActive] = useState(0)
   const [radius, setRadius] = useState(400)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -177,6 +179,28 @@ export function WardrobeCarousel({ items, onSelect }: WardrobeCarouselProps) {
         <div className="min-w-[150px] text-center">
           <p className="text-[15px] font-medium text-foreground">{activeItem.name}</p>
           <p className="text-[13px] text-muted-foreground">{activeItem.brand}</p>
+
+          {/* Quick trade toggle — always visible on the front item */}
+          {activeItem.status === "wardrobe" && onMoveToReady && (
+            <button
+              type="button"
+              onClick={() => onMoveToReady(activeItem.id)}
+              className="mt-2 flex items-center justify-center gap-1 rounded-full border border-[rgba(201,169,106,0.5)] bg-[rgba(248,228,210,0.5)] px-3 py-1 text-[11px] font-medium text-[#7A5A40] transition hover:bg-[rgba(248,228,210,0.8)] mx-auto"
+            >
+              <HeartHandshake className="h-3 w-3" />
+              List for trade
+            </button>
+          )}
+          {activeItem.status === "readyToTrade" && onRemoveFromReady && (
+            <button
+              type="button"
+              onClick={() => onRemoveFromReady(activeItem.id)}
+              className="mt-2 flex items-center justify-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary transition hover:bg-primary/15 mx-auto"
+            >
+              <RotateCcw className="h-3 w-3" />
+              Listed · tap to undo
+            </button>
+          )}
         </div>
 
         <button

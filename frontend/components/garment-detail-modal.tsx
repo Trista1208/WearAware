@@ -1,7 +1,7 @@
 "use client"
 
 import { motion, AnimatePresence } from "framer-motion"
-import { X } from "lucide-react"
+import { ArrowLeftRight, HeartHandshake, X } from "lucide-react"
 import type { WardrobeItem } from "@/lib/wardrobe-data"
 import { getUsageFilter } from "@/lib/sustainability"
 import { GarmentImage } from "@/components/garment-image"
@@ -10,9 +10,11 @@ import { cn } from "@/lib/utils"
 interface GarmentDetailModalProps {
   item: WardrobeItem | null
   onClose: () => void
+  onMoveToReady?: (id: string) => void
+  onRemoveFromReady?: (id: string) => void
 }
 
-export function GarmentDetailModal({ item, onClose }: GarmentDetailModalProps) {
+export function GarmentDetailModal({ item, onClose, onMoveToReady, onRemoveFromReady }: GarmentDetailModalProps) {
   return (
     <AnimatePresence>
       {item && (
@@ -95,6 +97,28 @@ export function GarmentDetailModal({ item, onClose }: GarmentDetailModalProps) {
                   </p>
                 </div>
               </div>
+
+              {/* Trade action button */}
+              {item.status === "wardrobe" && onMoveToReady && (
+                <button
+                  type="button"
+                  onClick={() => { onMoveToReady(item.id); onClose() }}
+                  className="mt-1 flex w-full items-center justify-center gap-2 rounded-2xl border border-[rgba(201,169,106,0.4)] bg-gradient-to-b from-[rgba(248,228,210,0.5)] to-[rgba(235,195,165,0.35)] px-4 py-3 text-sm font-medium text-[#7A5A40] transition hover:from-[rgba(248,228,210,0.7)] hover:to-[rgba(235,195,165,0.55)]"
+                >
+                  <HeartHandshake className="h-4 w-4" />
+                  List for community trade
+                </button>
+              )}
+              {item.status === "readyToTrade" && onRemoveFromReady && (
+                <button
+                  type="button"
+                  onClick={() => { onRemoveFromReady(item.id); onClose() }}
+                  className="mt-1 flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-secondary/60 px-4 py-3 text-sm font-medium text-muted-foreground transition hover:bg-secondary"
+                >
+                  <ArrowLeftRight className="h-4 w-4" />
+                  Remove from trade listing
+                </button>
+              )}
             </div>
           </motion.div>
         </>

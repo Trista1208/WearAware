@@ -11,6 +11,7 @@ import sustainabilityRoutes from './routes/sustainability.routes';
 import matchingRoutes     from './routes/matching.routes';
 import storeRoutes        from './routes/stores.routes';
 import analyticsRoutes    from './routes/analytics.routes';
+import aiRoutes           from './routes/ai.routes';
 
 dotenv.config();
 
@@ -37,6 +38,7 @@ app.use('/api/sustainability', sustainabilityRoutes);
 app.use('/api/matching',       matchingRoutes);
 app.use('/api/stores',         storeRoutes);
 app.use('/api/analytics',      analyticsRoutes);
+app.use('/api/ai',             aiRoutes);
 
 // ─── 404 handler ──────────────────────────────────────────────────────────────
 app.use((_req, res) => {

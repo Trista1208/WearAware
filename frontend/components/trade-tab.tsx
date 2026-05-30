@@ -2,11 +2,11 @@
 
 import { useRef, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { ArrowLeftRight, Camera, Search, Shirt, Upload } from "lucide-react"
+import { ArrowLeftRight, Bot, Camera, Leaf, Search, Shirt, Sparkles, Upload } from "lucide-react"
 import { toast } from "sonner"
 import type { WardrobeItem } from "@/lib/wardrobe-data"
 import { findTradeMatch, type TradeMatch } from "@/lib/trade-matching"
-import { executeTrade } from "@/lib/api"
+import { executeTrade, apiTradeInsight, type TradeInsightResult } from "@/lib/api"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { GarmentImage } from "@/components/garment-image"
@@ -16,6 +16,7 @@ import { goldBorder } from "@/lib/design-tokens"
 interface TradeTabProps {
   readyItems: WardrobeItem[]
   onTradeComplete: (offeringId: string | null, gainedItem: WardrobeItem) => void
+  onRequestAuth?: () => void
 }
 
 type Owner = "you" | "match"
@@ -107,14 +108,16 @@ function AvatarFigure({
   )
 }
 
-export function TradeTab({ readyItems, onTradeComplete }: TradeTabProps) {
+export function TradeTab({ readyItems, onTradeComplete, onRequestAuth }: TradeTabProps) {
   const [query, setQuery] = useState("")
   const [match, setMatch] = useState<TradeMatch | null>(null)
   const [owner, setOwner] = useState<Owner>("match")
   const [flash, setFlash] = useState(false)
+  const [insight, setInsight] = useState<TradeInsightResult | null>(null)
+  const [insightLoading, setInsightLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const findMatch = () => {
+  const findMatch = async () => {
     if (!query.trim()) {
       toast.error("Describe or name the piece you're looking for.")
       return
@@ -129,6 +132,7 @@ export function TradeTab({ readyItems, onTradeComplete }: TradeTabProps) {
     if (!result) {
       toast.error("No match in community listings yet. Try a broader description.")
       setMatch(null)
+      setInsight(null)
       return
     }
 
@@ -139,7 +143,23 @@ export function TradeTab({ readyItems, onTradeComplete }: TradeTabProps) {
 
     setMatch(result)
     setOwner("match")
-    toast.success(`Matched with ${result.listing.userName} — they have "${result.listing.item.name}".`)
+    setInsight(null)
+    toast.success(`Matched with ${result.listing.userName} in ${result.listing.location} — "${result.listing.item.name}"`)
+
+    // Fetch AI trade insight in the background
+    setInsightLoading(true)
+    try {
+      const ai = await apiTradeInsight({
+        wanted_item:  { name: result.listing.item.name,  category: result.listing.item.category, brand: result.listing.item.brand, tag: result.listing.item.tag },
+        offered_item: { name: result.offering.name, category: result.offering.category, brand: result.offering.brand, wears: result.offering.wears, tag: result.offering.tag },
+      })
+      setInsight(ai)
+    } catch (err) {
+      const msg = (err as Error).message
+      if (msg === "SESSION_EXPIRED") { onRequestAuth?.() }
+    } finally {
+      setInsightLoading(false)
+    }
   }
 
   const handleTrade = async () => {
@@ -187,7 +207,8 @@ export function TradeTab({ readyItems, onTradeComplete }: TradeTabProps) {
               className="pl-9"
             />
           </div>
-          <Button onClick={findMatch} className="rounded-full shrink-0">
+          <Button onClick={findMatch} className="rounded-full shrink-0 gap-1.5">
+            <Sparkles className="h-3.5 w-3.5" />
             Find Match
           </Button>
         </div>
@@ -283,6 +304,73 @@ export function TradeTab({ readyItems, onTradeComplete }: TradeTabProps) {
           </motion.p>
         )}
       </div>
+
+      {/* AI Trade Insight card */}
+      <AnimatePresence mode="wait">
+        {insightLoading && (
+          <motion.div
+            key="loading"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="flex items-center justify-center gap-2 rounded-2xl border border-border bg-card/60 px-6 py-4 text-sm text-muted-foreground"
+          >
+            <Bot className="h-4 w-4 animate-pulse text-primary" />
+            AI is evaluating this swap…
+          </motion.div>
+        )}
+        {!insightLoading && insight && (
+          <motion.div
+            key="insight"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className={cn(
+              "rounded-2xl border p-5 space-y-3",
+              insight.verdict === "great" || insight.verdict === "good"
+                ? "border-[rgba(122,140,110,0.35)] bg-[rgba(122,140,110,0.08)]"
+                : insight.verdict === "caution"
+                ? "border-[rgba(196,150,90,0.35)] bg-[rgba(196,150,90,0.08)]"
+                : "border-border bg-card/60",
+            )}
+          >
+            {/* Header */}
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">{insight.emoji}</span>
+              <div>
+                <p className="font-medium text-foreground">{insight.headline}</p>
+                <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                  <Bot className="h-3 w-3" /> AI Trade Advisor · Score impact:
+                  <span className={cn(
+                    "font-semibold",
+                    insight.score_impact.startsWith("+") ? "text-primary" : "text-muted-foreground"
+                  )}>
+                    {insight.score_impact}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            {/* Details grid */}
+            <div className="grid gap-2 text-sm sm:grid-cols-3">
+              <div className="rounded-xl border border-border bg-background/60 p-3">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Why swap?</p>
+                <p className="text-xs text-foreground">{insight.rationale}</p>
+              </div>
+              <div className="rounded-xl border border-border bg-background/60 p-3">
+                <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <Leaf className="h-3 w-3" /> Sustainability
+                </p>
+                <p className="text-xs text-foreground">{insight.sustainability}</p>
+              </div>
+              <div className="rounded-xl border border-border bg-background/60 p-3">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Style tip</p>
+                <p className="text-xs text-foreground">{insight.style_tip}</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {readyItems.length > 0 && (
         <section>

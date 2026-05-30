@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { supabaseAdmin } from '../config/supabase';
 import { AuthRequest, MaterialType } from '../types';
 import * as sustainabilityService from '../services/sustainability.service';
+import * as aiService from '../services/ai.service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/sustainability/score
@@ -135,8 +136,35 @@ export async function getPurchaseAdvice(req: AuthRequest, res: Response): Promis
     isLocalBrand: is_local_brand,
   });
 
-  const isFf    = sustainabilityService.isFastFashionBrand(brand);
-  const reasoning = reasons.join('. ');
+  const isFf = sustainabilityService.isFastFashionBrand(brand);
+
+  // Fetch wardrobe size for AI context
+  const { count: wardrobeSize } = await supabaseAdmin
+    .from('clothing_items')
+    .select('*', { count: 'exact', head: true })
+    .eq('owner_id', userId)
+    .eq('is_active', true);
+
+  // Get AI-powered advice
+  let aiAdvice = reasons.join('. ');
+  let aiEmoji  = delta >= 0 ? '✅' : '⚠️';
+  try {
+    const aiResult = await aiService.getPurchaseAdvice({
+      item_description: item_description,
+      brand,
+      material,
+      is_second_hand,
+      is_local_brand,
+      rule_verdict:  verdict,
+      rule_reasons:  reasons,
+      score_delta:   delta,
+      wardrobe_size: wardrobeSize ?? 0,
+    });
+    aiAdvice = aiResult.advice;
+    aiEmoji  = aiResult.emoji;
+  } catch (aiErr) {
+    console.warn('[ai] getPurchaseAdvice fell back to rule-based:', (aiErr as Error).message);
+  }
 
   // Persist advice log
   const { data: logEntry, error } = await supabaseAdmin
@@ -146,7 +174,7 @@ export async function getPurchaseAdvice(req: AuthRequest, res: Response): Promis
       item_description:      item_description || null,
       image_url:             image_url        || null,
       ai_verdict:            verdict,
-      ai_reasoning:          reasoning,
+      ai_reasoning:          aiAdvice,
       sustainability_impact: delta,
     })
     .select()
@@ -162,14 +190,11 @@ export async function getPurchaseAdvice(req: AuthRequest, res: Response): Promis
     data: {
       advice_log_id:          logEntry.id,
       verdict,
+      emoji:                  aiEmoji,
+      advice:                 aiAdvice,
       reasons,
       estimated_score_delta:  delta,
-      fast_fashion_warning:   isFf ? `"${brand}" is on the fast-fashion brand list. This item will add to your fast-fashion penalty on your next wardrobe rescore.` : null,
-      tip: verdict === 'not_recommended'
-        ? 'Consider looking for this item second-hand or in a partner store near you.'
-        : verdict === 'recommended'
-        ? 'Great choice! This item aligns well with sustainable fashion.'
-        : 'This item has a moderate sustainability profile.',
+      fast_fashion_warning:   isFf ? `"${brand}" is on the fast-fashion brand list.` : null,
     },
   });
 }
