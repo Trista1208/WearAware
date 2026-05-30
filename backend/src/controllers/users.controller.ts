@@ -39,18 +39,25 @@ export async function updateMyProfile(req: AuthRequest, res: Response): Promise<
 export async function getPublicProfile(req: AuthRequest, res: Response): Promise<void> {
   const { username } = req.params;
 
-  const { data, error } = await supabaseAdmin
+  const { data: profile, error } = await supabaseAdmin
     .from('profiles')
-    .select('id, name, gender, profession, sustainable_goal, fashion_style, sustainability_scores(score, grade)')
+    .select('id, name, gender, profession, sustainable_goal, fashion_style')
     .eq('name', username)
     .single();
 
-  if (error || !data) {
+  if (error || !profile) {
     res.status(404).json({ success: false, error: 'User not found' });
     return;
   }
 
-  res.json({ success: true, data });
+  const { data: scores } = await supabaseAdmin
+    .from('sustainability_scores')
+    .select('score, grade')
+    .eq('user_id', profile.id)
+    .order('updated_at', { ascending: false })
+    .limit(1);
+
+  res.json({ success: true, data: { ...profile, sustainability_scores: scores || [] } });
 }
 
 export async function getMyConnections(req: AuthRequest, res: Response): Promise<void> {
