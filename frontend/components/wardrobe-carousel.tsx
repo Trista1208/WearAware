@@ -1,37 +1,34 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { type DragEvent, useCallback, useEffect, useRef, useState } from "react"
 import { motion } from "framer-motion"
-import { ChevronLeft, ChevronRight, Check, Store } from "lucide-react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import type { WardrobeItem } from "@/lib/wardrobe-data"
+import { getUsageFilter } from "@/lib/sustainability"
+import { GarmentImage } from "@/components/garment-image"
 import { cn } from "@/lib/utils"
+import { goldBorder, goldBorderSoft } from "@/lib/design-tokens"
 
 interface WardrobeCarouselProps {
   items: WardrobeItem[]
-  onList: (id: string) => void
+  onSelect: (item: WardrobeItem) => void
 }
 
-export function WardrobeCarousel({ items, onList }: WardrobeCarouselProps) {
+export function WardrobeCarousel({ items, onSelect }: WardrobeCarouselProps) {
   const [active, setActive] = useState(0)
-  const [radius, setRadius] = useState(340)
+  const [radius, setRadius] = useState(400)
   const containerRef = useRef<HTMLDivElement>(null)
   const dragStart = useRef<number | null>(null)
 
   const count = items.length
   const step = count > 0 ? 360 / count : 0
 
-  // Reset to first item whenever the item set changes (e.g. new category).
-  useEffect(() => {
-    setActive(0)
-  }, [items])
-
-  // Responsive radius so the rack scales gracefully on any screen.
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
     const update = () => {
       const w = el.clientWidth
-      setRadius(Math.max(200, Math.min(w * 0.4, 380)))
+      setRadius(Math.max(210, Math.min(w * 0.42, 400)))
     }
     update()
     const ro = new ResizeObserver(update)
@@ -58,8 +55,8 @@ export function WardrobeCarousel({ items, onList }: WardrobeCarouselProps) {
 
   if (count === 0) {
     return (
-      <div className="flex h-[340px] w-full items-center justify-center text-sm text-muted-foreground">
-        No items in this category yet.
+      <div className="flex h-[420px] w-full items-center justify-center rounded-3xl border border-dashed border-border bg-card/40 text-sm text-muted-foreground">
+        No pieces in this category yet — add one on the left.
       </div>
     )
   }
@@ -71,124 +68,135 @@ export function WardrobeCarousel({ items, onList }: WardrobeCarouselProps) {
       <div
         ref={containerRef}
         className="relative w-full select-none"
-        style={{ perspective: "1400px" }}
+        style={{ perspective: "1600px" }}
         onPointerDown={(e) => {
           dragStart.current = e.clientX
         }}
         onPointerUp={(e) => {
           if (dragStart.current === null) return
           const delta = e.clientX - dragStart.current
-          if (delta > 60) rotate(-1)
-          else if (delta < -60) rotate(1)
+          if (delta > 50) rotate(-1)
+          else if (delta < -50) rotate(1)
           dragStart.current = null
         }}
       >
-        <div className="relative mx-auto h-[320px] w-full sm:h-[380px]" style={{ transformStyle: "preserve-3d" }}>
+        {/* Cylinder backdrop */}
+        <div className={cn("pointer-events-none absolute inset-x-[12%] top-[8%] h-[72%] rounded-[50%] bg-gradient-to-b from-[rgba(255,235,210,0.5)] to-[rgba(248,220,190,0.2)]", goldBorderSoft)} />
+
+        <div className="relative mx-auto h-[400px] w-full sm:h-[470px]" style={{ transformStyle: "preserve-3d" }}>
           {items.map((item, i) => {
             let rel = (i - active) * step
             if (rel > 180) rel -= 360
             if (rel < -180) rel += 360
             const rad = (rel * Math.PI) / 180
-            const depth = Math.cos(rad) // 1 at front, -1 at back
-            const scale = 0.58 + ((depth + 1) / 2) * 0.42
-            const opacity = 0.2 + ((depth + 1) / 2) * 0.8
+            const depth = Math.cos(rad)
+            const scale = 0.55 + ((depth + 1) / 2) * 0.45
+            const opacity = 0.18 + ((depth + 1) / 2) * 0.82
             const isFront = i === active
 
             return (
-              <motion.button
+              <motion.div
                 key={item.id}
-                aria-label={`${item.name} by ${item.brand}`}
-                onClick={() => setActive(i)}
-                className="absolute left-1/2 top-1/2 -ml-[100px] -mt-[140px] h-[280px] w-[200px] cursor-pointer rounded-3xl focus:outline-none"
+                draggable={item.status === "wardrobe"}
+                onDragStart={(e) => {
+                  // motion.div has no `drag` prop, so this is the native drag event
+                  const { dataTransfer } = e as unknown as DragEvent<HTMLDivElement>
+                  dataTransfer.setData("text/wearaware-item-id", item.id)
+                  dataTransfer.effectAllowed = "move"
+                }}
                 animate={{
                   transform: `rotateY(${rel}deg) translateZ(${radius}px) scale(${scale})`,
                   opacity,
                   zIndex: Math.round(depth * 100),
                 }}
                 transition={{ type: "spring", stiffness: 90, damping: 18 }}
+                className="absolute left-1/2 top-1/2 -ml-[102px] -mt-[178px] h-[350px] w-[204px]"
                 style={{ transformStyle: "preserve-3d" }}
               >
-                <div
+                {/* Hanger */}
+                <div className="mx-auto flex w-[80px] flex-col items-center">
+                  <div className="h-3.5 w-3.5 rounded-full border-2 border-[#C9A96A] bg-[#FAF4EC]" />
+                  <div className="h-2.5 w-px bg-[#C9A96A]" />
+                  <div className="h-2 w-16 rounded-t-full border-t-2 border-x-2 border-[#C9A96A]" />
+                </div>
+
+                <motion.button
+                  type="button"
+                  aria-label={`${item.name} by ${item.brand}`}
+                  onClick={() => {
+                    setActive(i)
+                    if (isFront) onSelect(item)
+                  }}
+                  whileHover={isFront ? { y: -4 } : undefined}
                   className={cn(
-                    "flex h-full w-full flex-col overflow-hidden rounded-3xl border bg-card shadow-sm transition-all",
-                    isFront ? "shadow-xl" : "",
-                    item.listed ? "border-primary ring-2 ring-primary/40" : "border-border",
+                    "mt-1.5 flex h-[284px] w-full cursor-grab flex-col overflow-hidden rounded-2xl bg-[#FFFFF8] text-left shadow-sm active:cursor-grabbing",
+                    goldBorder,
+                    isFront ? "shadow-[0_12px_40px_rgba(201,169,106,0.26),0_2px_8px_rgba(180,120,90,0.08)]" : "",
+                    item.status !== "wardrobe" ? "opacity-60" : "",
                   )}
                 >
-                  <div className="relative flex flex-1 items-center justify-center bg-secondary p-4">
-                    <img
-                      src={item.image || "/placeholder.svg"}
-                      alt={item.name}
-                      crossOrigin="anonymous"
-                      className="h-full w-full object-contain"
-                      draggable={false}
+                  <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-gradient-to-b from-[#FDF6EC] via-[#FAF1E2] to-[#F2E2CE] p-3">
+                    {/* Soft champagne floor glow beneath the garment */}
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute inset-x-6 bottom-2 h-6 rounded-[50%] bg-[rgba(201,169,106,0.18)] blur-lg"
                     />
-                    <span className="absolute left-3 top-3 rounded-full bg-accent px-2.5 py-1 text-[11px] font-medium text-accent-foreground">
-                      {item.tag}
-                    </span>
+                    <GarmentImage
+                      item={item}
+                      imgClassName="relative transition-[filter] duration-500"
+                      style={{ filter: getUsageFilter(item.wears) }}
+                    />
+                    {item.wears >= 20 && (
+                      <span className="absolute inset-x-3 bottom-3 h-8 rounded-full bg-primary/10 blur-xl" aria-hidden />
+                    )}
                   </div>
-                  <div className="border-t border-border px-4 py-3 text-left">
-                    <p className="truncate text-sm font-medium text-card-foreground">{item.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">{item.brand}</p>
+                  <div className="border-t border-[rgba(196,160,92,0.4)] bg-gradient-to-b from-[#FFFFF8] to-[#FBF5EA] px-3.5 py-2.5">
+                    <p className="truncate text-[13px] font-medium text-card-foreground">{item.name}</p>
+                    <p className="truncate text-[11px] text-muted-foreground">Worn {item.wears}×</p>
                   </div>
-                </div>
-              </motion.button>
+                </motion.button>
+              </motion.div>
             )
           })}
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="mt-2 flex items-center gap-6">
+      <div className="mt-4 flex items-center gap-7">
         <button
+          type="button"
           onClick={() => rotate(-1)}
           aria-label="Previous item"
-          className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-card text-foreground transition-colors hover:bg-secondary"
+          className={cn(
+            "flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-b from-[#FFFFF8] to-[#F8F0E2] text-foreground transition-colors hover:bg-secondary",
+            goldBorder,
+          )}
         >
           <ChevronLeft className="h-5 w-5" />
         </button>
 
         <div className="min-w-[150px] text-center">
-          <p className="text-sm font-medium text-foreground">{activeItem.brand}</p>
-          <p className="text-xs text-muted-foreground">Worn {activeItem.wears}×</p>
+          <p className="text-[15px] font-medium text-foreground">{activeItem.name}</p>
+          <p className="text-[13px] text-muted-foreground">{activeItem.brand}</p>
         </div>
 
         <button
+          type="button"
           onClick={() => rotate(1)}
           aria-label="Next item"
-          className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-card text-foreground transition-colors hover:bg-secondary"
+          className={cn(
+            "flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-b from-[#FFFFF8] to-[#F8F0E2] text-foreground transition-colors hover:bg-secondary",
+            goldBorder,
+          )}
         >
           <ChevronRight className="h-5 w-5" />
         </button>
       </div>
 
-      {/* List on Marketplace */}
-      <button
-        onClick={() => onList(activeItem.id)}
-        disabled={activeItem.listed}
-        className={cn(
-          "mt-5 flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-colors",
-          activeItem.listed
-            ? "cursor-default bg-accent text-accent-foreground"
-            : "bg-primary text-primary-foreground hover:opacity-90",
-        )}
-      >
-        {activeItem.listed ? (
-          <>
-            <Check className="h-4 w-4" /> Listed on Marketplace
-          </>
-        ) : (
-          <>
-            <Store className="h-4 w-4" /> List on Marketplace
-          </>
-        )}
-      </button>
-
-      {/* Dots */}
-      <div className="mt-5 flex items-center gap-2">
+      <div className="mt-4 flex items-center gap-2">
         {items.map((item, i) => (
           <button
             key={item.id}
+            type="button"
             onClick={() => setActive(i)}
             aria-label={`Go to ${item.name}`}
             className={cn(

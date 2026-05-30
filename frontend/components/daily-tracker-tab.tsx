@@ -6,8 +6,10 @@ import { Check, Flame, Moon, Sparkles, Store, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import type { WardrobeItem } from "@/lib/wardrobe-data"
 import { logDailyWear } from "@/lib/api"
+import { getUsageFilter } from "@/lib/sustainability"
+import { GarmentImage } from "@/components/garment-image"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import { goldBorder, goldBorderSoft } from "@/lib/design-tokens"
 
 interface DailyTrackerTabProps {
   items: WardrobeItem[]
@@ -68,87 +70,128 @@ export function DailyTrackerTab({ items, onWear, onList }: DailyTrackerTabProps)
   return (
     <div className="flex flex-col gap-10">
       <div className="text-center">
-        <h1 className="text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+        <motion.h1
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-balance font-serif text-4xl font-light tracking-tight text-[#2C2C2C] sm:text-[2.875rem]"
+        >
           Daily Tracker
-        </h1>
-        <p className="mt-2 text-pretty text-sm text-muted-foreground">
+        </motion.h1>
+        <p className="mt-2.5 text-pretty text-[14px] text-muted-foreground">
           Log what you wear and let your wardrobe earn its keep.
         </p>
       </div>
 
       {/* Worn today picker */}
       <section>
-        <h2 className="mb-3 text-sm font-medium text-foreground">Select an item you wore today</h2>
+        <h2 className="mb-4 text-[13px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+          Select an item you wore today
+        </h2>
         <div className="flex gap-3 overflow-x-auto pb-2">
-          {items.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setSelected(item.id)}
-              className={cn(
-                "flex w-28 shrink-0 flex-col overflow-hidden rounded-2xl border bg-card text-left transition-all",
-                selected === item.id ? "border-primary ring-2 ring-primary/40" : "border-border hover:border-muted-foreground",
-              )}
-            >
-              <div className="flex h-24 items-center justify-center bg-secondary p-2">
-                <img src={item.image || "/placeholder.svg"} alt={item.name} crossOrigin="anonymous" className="h-full w-full object-contain" />
-              </div>
-              <span className="truncate px-2 py-1.5 text-xs font-medium text-card-foreground">{item.name}</span>
-            </button>
-          ))}
+          {items.map((item) => {
+            const isActive = selected === item.id
+            return (
+              <motion.button
+                key={item.id}
+                onClick={() => setSelected(isActive ? null : item.id)}
+                whileHover={{ y: -3 }}
+                className={cn(
+                  "flex w-28 shrink-0 flex-col overflow-hidden rounded-2xl bg-[#FFFFF8] text-left transition-shadow sm:w-32",
+                  goldBorder,
+                  isActive
+                    ? "shadow-[0_0_0_2px_rgba(94,110,85,0.6),0_10px_28px_rgba(94,110,85,0.18)]"
+                    : "shadow-[0_2px_10px_rgba(201,169,106,0.1)] hover:shadow-[0_10px_28px_rgba(201,169,106,0.18)]",
+                )}
+              >
+                <div className="flex h-24 items-center justify-center overflow-hidden bg-gradient-to-b from-[#FDF6EC] to-[#F2E4D4] p-2.5">
+                  <GarmentImage item={item} style={{ filter: getUsageFilter(item.wears) }} />
+                </div>
+                <span className="truncate border-t border-[rgba(196,160,92,0.34)] px-2.5 py-2 text-[12px] font-medium text-card-foreground">
+                  {item.name}
+                </span>
+              </motion.button>
+            )
+          })}
         </div>
-        <Button onClick={handleWornToday} disabled={!selected} className="mt-3 rounded-full">
+        <button
+          type="button"
+          onClick={handleWornToday}
+          disabled={!selected}
+          className={cn(
+            "mt-4 inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-[13px] font-medium transition-all",
+            selected
+              ? "bg-gradient-to-b from-[#6A7A60] to-[#54634C] text-[#FFFFF8] shadow-[0_3px_12px_rgba(94,110,85,0.32),inset_0_1px_0_rgba(232,214,170,0.5)] ring-1 ring-[rgba(212,180,118,0.5)] hover:opacity-95"
+              : "cursor-not-allowed bg-[rgba(180,165,140,0.16)] text-muted-foreground",
+          )}
+        >
           <Check className="h-4 w-4" /> Worn Today
-        </Button>
+        </button>
       </section>
 
       {/* Rotation + dormant cards */}
       <section className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-3xl border border-border bg-card p-6">
-          <div className="mb-4 flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+        <div
+          className={cn(
+            "rounded-3xl p-6 sm:p-7",
+            goldBorder,
+            "bg-gradient-to-br from-[#FFFCF7]/92 to-[#FBF3E6]/85 shadow-[inset_0_1px_0_rgba(255,255,248,1),0_8px_28px_rgba(201,169,106,0.1)]",
+          )}
+        >
+          <div className="mb-5 flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[rgba(196,142,112,0.14)] text-[#A0583C]">
               <Flame className="h-4 w-4" />
             </span>
-            <h3 className="text-sm font-medium text-card-foreground">Highest Rotation</h3>
+            <h3 className="font-serif text-[1.3rem] font-light text-[#2C2C2C]">Highest Rotation</h3>
           </div>
-          <ul className="flex flex-col gap-3">
+          <ul className="flex flex-col gap-3.5">
             {topRotation.map((item) => (
               <li key={item.id} className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary">
-                  <img src={item.image || "/placeholder.svg"} alt={item.name} crossOrigin="anonymous" className="h-full w-full object-contain p-1" />
+                <div className={cn("flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b from-[#FDF6EC] to-[#F1E4D2]", goldBorderSoft)}>
+                  <GarmentImage item={item} imgClassName="p-1.5" />
                 </div>
-                <span className="min-w-0 flex-1 truncate text-sm text-card-foreground">{item.name}</span>
-                <span className="text-xs font-medium text-muted-foreground">{item.wears}×</span>
+                <span className="min-w-0 flex-1 truncate text-[14px] text-card-foreground">{item.name}</span>
+                <span className="shrink-0 text-[13px] font-semibold tabular-nums text-[#5E6E55]">{item.wears}×</span>
               </li>
             ))}
           </ul>
         </div>
 
-        <div className="rounded-3xl border border-border bg-card p-6">
-          <div className="mb-4 flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary text-foreground">
+        <div
+          className={cn(
+            "rounded-3xl p-6 sm:p-7",
+            goldBorder,
+            "bg-gradient-to-br from-[#FFFCF7]/92 to-[#FBF3E6]/85 shadow-[inset_0_1px_0_rgba(255,255,248,1),0_8px_28px_rgba(201,169,106,0.1)]",
+          )}
+        >
+          <div className="mb-5 flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[rgba(122,140,110,0.14)] text-[#5E6E55]">
               <Moon className="h-4 w-4" />
             </span>
-            <h3 className="text-sm font-medium text-card-foreground">Dormant Items</h3>
+            <h3 className="font-serif text-[1.3rem] font-light text-[#2C2C2C]">Dormant Items</h3>
           </div>
           {dormant.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nothing dormant — your wardrobe is working hard.</p>
+            <p className="text-[14px] text-muted-foreground">Nothing dormant — your wardrobe is working hard.</p>
           ) : (
-            <ul className="flex flex-col gap-3">
+            <ul className="flex flex-col gap-3.5">
               {dormant.map((item) => (
                 <li key={item.id} className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary">
-                    <img src={item.image || "/placeholder.svg"} alt={item.name} crossOrigin="anonymous" className="h-full w-full object-contain p-1" />
+                  <div className={cn("flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b from-[#FDF6EC] to-[#F1E4D2]", goldBorderSoft)}>
+                    <GarmentImage item={item} imgClassName="p-1.5" style={{ filter: getUsageFilter(item.wears) }} />
                   </div>
-                  <span className="min-w-0 flex-1 truncate text-sm text-card-foreground">{item.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-[14px] text-card-foreground">{item.name}</span>
                   <button
+                    type="button"
                     onClick={() => {
+                      if (item.listed) return
                       onList(item.id)
                       toast.success(`${item.name} sent to Marketplace.`)
                     }}
                     disabled={item.listed}
                     className={cn(
-                      "flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors",
-                      item.listed ? "bg-accent text-accent-foreground" : "bg-primary text-primary-foreground hover:opacity-90",
+                      "flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors",
+                      item.listed
+                        ? "border border-[rgba(94,110,85,0.4)] bg-transparent text-[#5E6E55]"
+                        : "bg-gradient-to-b from-[#6A7A60] to-[#54634C] text-[#FFFFF8] ring-1 ring-[rgba(212,180,118,0.45)] hover:opacity-95",
                     )}
                   >
                     <Store className="h-3 w-3" /> {item.listed ? "Listed" : "Optimize"}
@@ -161,18 +204,29 @@ export function DailyTrackerTab({ items, onWear, onList }: DailyTrackerTabProps)
       </section>
 
       {/* AI Stylist */}
-      <section className="rounded-3xl border border-border bg-card p-6">
+      <section
+        className={cn(
+          "rounded-3xl p-7 sm:p-8",
+          goldBorder,
+          "bg-gradient-to-br from-[#FFFCF7]/92 to-[#FBF3E6]/85 shadow-[inset_0_1px_0_rgba(255,255,248,1),0_8px_28px_rgba(201,169,106,0.1)]",
+        )}
+      >
         <div className="flex flex-col items-center gap-4 text-center">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-b from-[#6A7A60] to-[#54634C] text-[#FFFFF8] ring-1 ring-[rgba(212,180,118,0.45)]">
             <Sparkles className="h-5 w-5" />
           </span>
           <div>
-            <h3 className="text-base font-medium text-card-foreground">AI Stylist</h3>
-            <p className="text-sm text-muted-foreground">Generate a fit from pieces you already own.</p>
+            <h3 className="font-serif text-[1.5rem] font-light text-[#2C2C2C]">AI Stylist</h3>
+            <p className="mt-1 text-[14px] text-muted-foreground">Generate a fit from pieces you already own.</p>
           </div>
-          <Button onClick={generateFit} disabled={generating} className="rounded-full">
-            <Wand2 className="h-4 w-4" /> {generating ? "Styling..." : "Generate Fit for Today"}
-          </Button>
+          <button
+            type="button"
+            onClick={generateFit}
+            disabled={generating}
+            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-b from-[#6A7A60] to-[#54634C] px-5 py-2.5 text-[13px] font-medium text-[#FFFFF8] shadow-[0_3px_12px_rgba(94,110,85,0.32),inset_0_1px_0_rgba(232,214,170,0.5)] ring-1 ring-[rgba(212,180,118,0.5)] transition-opacity hover:opacity-95 disabled:opacity-70"
+          >
+            <Wand2 className="h-4 w-4" /> {generating ? "Styling…" : "Generate Fit for Today"}
+          </button>
         </div>
 
         <AnimatePresence mode="wait">
@@ -185,7 +239,7 @@ export function DailyTrackerTab({ items, onWear, onList }: DailyTrackerTabProps)
               className="mt-6 grid grid-cols-3 gap-3"
             >
               {[0, 1, 2].map((i) => (
-                <div key={i} className="aspect-[3/4] animate-pulse rounded-2xl bg-secondary" />
+                <div key={i} className="aspect-[3/4] animate-pulse rounded-2xl bg-[rgba(196,160,92,0.12)]" />
               ))}
             </motion.div>
           )}
@@ -200,21 +254,21 @@ export function DailyTrackerTab({ items, onWear, onList }: DailyTrackerTabProps)
             >
               <div className="grid grid-cols-3 gap-3">
                 {[outfit.top, outfit.bottom, outfit.shoe].map((piece, i) => (
-                  <div key={i} className="flex flex-col overflow-hidden rounded-2xl border border-border bg-background">
-                    <div className="flex aspect-[3/4] items-center justify-center bg-secondary p-3">
+                  <div key={i} className={cn("flex flex-col overflow-hidden rounded-2xl bg-[#FFFFF8]", goldBorderSoft)}>
+                    <div className="flex aspect-[3/4] items-center justify-center bg-gradient-to-b from-[#FDF6EC] to-[#F2E4D4] p-3">
                       {piece ? (
-                        <img src={piece.image || "/placeholder.svg"} alt={piece.name} crossOrigin="anonymous" className="h-full w-full object-contain" />
+                        <GarmentImage item={piece} />
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </div>
-                    <span className="truncate px-3 py-2 text-xs font-medium text-card-foreground">
+                    <span className="truncate border-t border-[rgba(196,160,92,0.3)] px-3 py-2 text-[12px] font-medium text-card-foreground">
                       {piece?.name ?? "No item"}
                     </span>
                   </div>
                 ))}
               </div>
-              <p className="mt-4 text-pretty text-center text-sm italic text-muted-foreground">{outfit.description}</p>
+              <p className="mt-4 text-pretty text-center text-[14px] italic text-muted-foreground">{outfit.description}</p>
             </motion.div>
           )}
         </AnimatePresence>

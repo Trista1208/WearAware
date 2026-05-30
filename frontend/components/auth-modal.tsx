@@ -2,142 +2,143 @@
 
 import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Sprout, Eye, EyeOff, Loader2 } from "lucide-react"
+import { X, Loader2 } from "lucide-react"
 import { useAuth } from "@/lib/auth-context"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { champagneBorder } from "@/lib/design-tokens"
 import { cn } from "@/lib/utils"
 
 type Mode = "login" | "register"
 
-export function AuthModal({ onSuccess }: { onSuccess: () => void }) {
+interface AuthModalProps {
+  onClose: () => void
+  onSuccess?: () => void
+}
+
+export function AuthModal({ onClose, onSuccess }: AuthModalProps) {
   const { login, register } = useAuth()
   const [mode, setMode] = useState<Mode>("login")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [username, setUsername] = useState("")
-  const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState("")
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError(null)
+    setError("")
     setLoading(true)
-    let result: { ok: boolean; error?: string }
-    if (mode === "login") {
-      result = await login(email, password)
-    } else {
-      result = await register(email, password, username)
-    }
+
+    const result =
+      mode === "login"
+        ? await login(email, password)
+        : await register(email, password, username)
+
     setLoading(false)
-    if (result.ok) {
-      onSuccess()
+
+    if (result.success) {
+      onSuccess?.()
+      onClose()
     } else {
       setError(result.error || "Something went wrong")
     }
   }
 
+  const inputClass =
+    "w-full rounded-xl border border-[rgba(212,180,118,0.3)] bg-[rgba(255,255,248,0.06)] px-4 py-3 text-sm text-[#2C2C2C] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[rgba(212,180,118,0.6)] transition"
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm p-4">
+    <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-sm rounded-3xl border border-border bg-card p-8 shadow-xl"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={(e) => e.target === e.currentTarget && onClose()}
       >
-        {/* Logo */}
-        <div className="mb-8 flex flex-col items-center gap-3 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary">
-            <Sprout className="h-6 w-6 text-primary-foreground" />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">WearAware</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {mode === "login" ? "Welcome back" : "Create your account"}
-            </p>
-          </div>
-        </div>
+        <motion.div
+          className={cn(
+            "relative w-full max-w-sm rounded-2xl bg-[#FFFFF8] p-8 shadow-2xl",
+            champagneBorder,
+          )}
+          initial={{ scale: 0.92, opacity: 0, y: 16 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.92, opacity: 0, y: 16 }}
+          transition={{ type: "spring", stiffness: 340, damping: 28 }}
+        >
+          {/* Close */}
+          <button
+            onClick={onClose}
+            className="absolute right-4 top-4 rounded-full p-1 text-muted-foreground hover:text-foreground transition"
+          >
+            <X className="h-4 w-4" />
+          </button>
 
-        {/* Mode toggle */}
-        <div className="mb-6 flex rounded-full bg-secondary p-1">
-          {(["login", "register"] as Mode[]).map((m) => (
-            <button
-              key={m}
-              onClick={() => { setMode(m); setError(null) }}
-              className={cn(
-                "flex-1 rounded-full py-2 text-sm font-medium transition-all",
-                mode === m
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {m === "login" ? "Sign In" : "Register"}
-            </button>
-          ))}
-        </div>
+          {/* Title */}
+          <h2 className="font-serif text-2xl font-medium text-[#2C2C2C] mb-1">
+            {mode === "login" ? "Welcome back" : "Create account"}
+          </h2>
+          <p className="text-[13px] text-muted-foreground mb-6">
+            {mode === "login"
+              ? "Sign in to access your wardrobe"
+              : "Start tracking your wardrobe mindfully"}
+          </p>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <AnimatePresence>
+          <form onSubmit={handleSubmit} className="space-y-3">
             {mode === "register" && (
-              <motion.div
-                key="username"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-              >
-                <Input
-                  placeholder="Username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  required={mode === "register"}
-                  className="rounded-xl"
-                />
-              </motion.div>
+              <input
+                type="text"
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className={inputClass}
+                required
+                minLength={3}
+              />
             )}
-          </AnimatePresence>
-
-          <Input
-            type="email"
-            placeholder="Email address"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="rounded-xl"
-          />
-
-          <div className="relative">
-            <Input
-              type={showPw ? "text" : "password"}
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className={inputClass}
+              required
+            />
+            <input
+              type="password"
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              className={inputClass}
               required
-              className="rounded-xl pr-10"
+              minLength={8}
             />
+
+            {error && (
+              <p className="text-[12px] text-red-500 bg-red-50 rounded-lg px-3 py-2">{error}</p>
+            )}
+
             <button
-              type="button"
-              tabIndex={-1}
-              onClick={() => setShowPw((v) => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-xl bg-gradient-to-b from-[#6A7A60] to-[#54634C] px-4 py-3 text-sm font-medium text-[#FFFFF8] shadow-md transition hover:opacity-90 disabled:opacity-60 flex items-center justify-center gap-2 mt-1"
             >
-              {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              {mode === "login" ? "Sign In" : "Create Account"}
             </button>
-          </div>
+          </form>
 
-          {error && (
-            <p className="rounded-xl bg-destructive/10 px-4 py-2.5 text-sm text-destructive">{error}</p>
-          )}
-
-          <Button type="submit" disabled={loading} className="rounded-full mt-2">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {mode === "login" ? "Sign In" : "Create Account"}
-          </Button>
-        </form>
-
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          The app works offline too — API calls fall back to local state.
-        </p>
+          {/* Toggle mode */}
+          <p className="mt-5 text-center text-[12px] text-muted-foreground">
+            {mode === "login" ? "Don't have an account?" : "Already have an account?"}{" "}
+            <button
+              onClick={() => { setMode(mode === "login" ? "register" : "login"); setError("") }}
+              className="font-medium text-[#54634C] hover:underline"
+            >
+              {mode === "login" ? "Sign up" : "Sign in"}
+            </button>
+          </p>
+        </motion.div>
       </motion.div>
-    </div>
+    </AnimatePresence>
   )
 }

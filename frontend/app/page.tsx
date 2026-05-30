@@ -1,150 +1,227 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
+import dynamic from "next/dynamic"
 import { motion, AnimatePresence } from "framer-motion"
-import { Shirt, CalendarCheck, TrendingUp, Store, Sprout, Building2, LogOut, type LucideIcon } from "lucide-react"
+import { Shirt, CalendarCheck, HelpCircle, ArrowLeftRight, Store, Sprout, LogIn, LogOut, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { champagneBorder, PAGE_BG } from "@/lib/design-tokens"
+import { useAuth } from "@/lib/auth-context"
+import { AuthModal } from "@/components/auth-modal"
+
+// Warm grain-gradient frame — client only (WebGL shader)
+const GradientBackground = dynamic(
+  () => import("@/components/ui/paper-design-shader-background").then((m) => m.GradientBackground),
+  { ssr: false, loading: () => <div className="fixed inset-0 -z-10" style={{ backgroundColor: PAGE_BG }} /> },
+)
 import { initialItems, type WardrobeItem } from "@/lib/wardrobe-data"
+import { computeAwareScore } from "@/lib/sustainability"
+import {
+  getReadyToTradeItems,
+  getWardrobeItems,
+  withStatus,
+} from "@/lib/wardrobe-selectors"
 import { WardrobeTab } from "@/components/wardrobe-tab"
 import { DailyTrackerTab } from "@/components/daily-tracker-tab"
-import { SavingsImpactTab } from "@/components/savings-impact-tab"
-import { MarketplaceTab } from "@/components/marketplace-tab"
+import { BuyTab } from "@/components/buy-tab"
+import { TradeTab } from "@/components/trade-tab"
 import { StoresTab } from "@/components/stores-tab"
-import { AuthModal } from "@/components/auth-modal"
-import { SustainabilityScoreBadge } from "@/components/sustainability-score-badge"
-import { AuthProvider, useAuth } from "@/lib/auth-context"
 
-type Tab = "wardrobe" | "tracker" | "impact" | "marketplace" | "stores"
+type Tab = "wardrobe" | "tracker" | "buy" | "trade" | "stores"
 
 const tabs: { id: Tab; label: string; icon: LucideIcon }[] = [
-  { id: "wardrobe",     label: "Wardrobe",   icon: Shirt },
-  { id: "tracker",     label: "Tracker",    icon: CalendarCheck },
-  { id: "impact",      label: "Impact",     icon: TrendingUp },
-  { id: "marketplace", label: "Marketplace",icon: Store },
-  { id: "stores",      label: "Stores",     icon: Building2 },
+  { id: "wardrobe", label: "Wardrobe", icon: Shirt },
+  { id: "tracker", label: "Daily Tracker", icon: CalendarCheck },
+  { id: "buy", label: "Buy?", icon: HelpCircle },
+  { id: "trade", label: "Trade", icon: ArrowLeftRight },
+  { id: "stores", label: "Stores", icon: Store },
 ]
 
-function AppShell() {
-  const { user, logout, isLoading } = useAuth()
+export default function Page() {
+  const { user, logout } = useAuth()
   const [showAuth, setShowAuth] = useState(false)
+
   const [tab, setTab] = useState<Tab>("wardrobe")
   const [items, setItems] = useState<WardrobeItem[]>(initialItems)
+  const [tradeBonus, setTradeBonus] = useState(0)
+  const [scoreAdjustments, setScoreAdjustments] = useState(0)
 
-  const addItem = (item: WardrobeItem) => setItems((prev) => [item, ...prev])
+  const wardrobeItems = useMemo(() => getWardrobeItems(items), [items])
+  const readyItems = useMemo(() => getReadyToTradeItems(items), [items])
+  const trackerItems = useMemo(() => items.filter((i) => i.status !== "traded"), [items])
 
-  const listItem = (id: string) => {
-    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, listed: true } : i)))
+  const awareScore = useMemo(() => {
+    const base = computeAwareScore(wardrobeItems, tradeBonus)
+    return Math.min(100, Math.max(0, base.total + scoreAdjustments))
+  }, [wardrobeItems, tradeBonus, scoreAdjustments])
+
+  const addItem = (item: WardrobeItem) =>
+    setItems((prev) => [withStatus({ ...item, image: item.imageUrl }, "wardrobe"), ...prev])
+
+  const moveToReady = (id: string) => {
+    setItems((prev) =>
+      prev.map((i) => (i.id === id ? withStatus(i, "readyToTrade") : i)),
+    )
     const item = items.find((i) => i.id === id)
-    if (item && !item.listed) toast.success(`${item.name} listed on the Marketplace.`)
+    if (item && item.status === "wardrobe") {
+      toast.success(`${item.name} moved to Ready to Part With.`)
+    }
   }
 
-  const wearItem = (id: string) =>
+  const logWear = (id: string) =>
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, wears: i.wears + 1 } : i)))
 
-  const listedItems = items.filter((i) => i.listed)
+  const removeFromReady = (id: string) => {
+    setItems((prev) => prev.map((i) => (i.id === id ? withStatus(i, "wardrobe") : i)))
+  }
 
-  if (isLoading) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    )
+  const handleTradeComplete = (offeringId: string | null, gainedItem: WardrobeItem) => {
+    setItems((prev) => {
+      const withoutOffering = offeringId
+        ? prev.map((i) => (i.id === offeringId ? withStatus(i, "traded") : i)).filter((i) => i.status !== "traded")
+        : prev
+      return [
+        withStatus(
+          {
+            ...gainedItem,
+            id: crypto.randomUUID(),
+            imageUrl: gainedItem.imageUrl || gainedItem.image || "",
+            wears: 0,
+          },
+          "wardrobe",
+        ),
+        ...withoutOffering,
+      ]
+    })
+    setTradeBonus((b) => Math.min(15, b + 5))
+  }
+
+  const handleScoreAdjust = (delta: number) => {
+    setScoreAdjustments((s) => s + delta)
   }
 
   return (
-    <main className="relative min-h-dvh bg-background pb-32">
-      {/* Auth modal */}
-      {showAuth && <AuthModal onSuccess={() => setShowAuth(false)} />}
+    <main className="relative min-h-dvh pb-32">
+      <GradientBackground />
 
-      {/* Header */}
-      <header className="mx-auto flex max-w-5xl items-center justify-between px-6 pt-8">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-            <Sprout className="h-4 w-4 text-primary-foreground" />
+      <header className="mx-auto flex max-w-7xl items-center justify-between px-6 pt-9 sm:px-10">
+        <div className="flex items-center gap-2.5">
+          <div
+            className={cn(
+              "flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-b from-[#FFFFF8] to-[#F6EEE0]",
+              champagneBorder,
+            )}
+          >
+            <Sprout className="h-4 w-4 text-primary" />
           </div>
-          <span className="text-lg font-semibold tracking-tight text-foreground">WearAware</span>
+          <span className="font-serif text-[22px] font-medium tracking-tight text-[#2C2C2C]">Wear Aware</span>
         </div>
-
         <div className="flex items-center gap-3">
-          {/* Live sustainability score (only when logged in) */}
-          <SustainabilityScoreBadge />
-
+          <div className="text-right">
+            <p className="text-[14px] font-medium text-foreground">
+              {wardrobeItems.length} pieces
+            </p>
+            <p className="text-[12px] tracking-wide text-muted-foreground">Score {awareScore}</p>
+          </div>
           {user ? (
             <button
               onClick={() => { logout(); toast.success("Signed out") }}
-              title="Sign out"
-              className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-sm text-muted-foreground transition hover:text-destructive"
+              title={`Signed in as ${user.email}`}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-medium text-muted-foreground hover:text-foreground border border-[rgba(212,180,118,0.3)] bg-[rgba(255,255,248,0.5)] transition",
+              )}
             >
               <LogOut className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{user.email?.split("@")[0] ?? "Account"}</span>
+              <span className="hidden sm:inline">Sign Out</span>
             </button>
           ) : (
             <button
               onClick={() => setShowAuth(true)}
-              className="rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground transition hover:opacity-90"
+              className={cn(
+                "flex items-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-medium text-[#FFFFF8] bg-gradient-to-b from-[#6A7A60] to-[#54634C] shadow-sm transition hover:opacity-90",
+              )}
             >
-              Sign In
+              <LogIn className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Sign In</span>
             </button>
           )}
         </div>
+
+        {showAuth && (
+          <AuthModal
+            onClose={() => setShowAuth(false)}
+            onSuccess={() => toast.success(`Welcome${user ? `, ${user.email}` : ""}!`)}
+          />
+        )}
       </header>
 
-      {/* Content */}
-      <div className="mx-auto max-w-5xl px-6 pt-10">
+      <div className="mx-auto max-w-7xl px-6 pt-12 sm:px-10">
         <AnimatePresence mode="wait">
           <motion.div
             key={tab}
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.3, ease: "easeOut" }}
+            transition={{ duration: 0.3, ease: [0.0, 0.0, 0.2, 1] }}
           >
-            {tab === "wardrobe"     && <WardrobeTab items={items} onAdd={addItem} onList={listItem} />}
-            {tab === "tracker"     && <DailyTrackerTab items={items} onWear={wearItem} onList={listItem} />}
-            {tab === "impact"      && <SavingsImpactTab />}
-            {tab === "marketplace" && <MarketplaceTab listedItems={listedItems} />}
-            {tab === "stores"      && <StoresTab />}
+            {tab === "wardrobe" && (
+              <WardrobeTab
+                items={items}
+                awareScore={awareScore}
+                onAdd={addItem}
+                onMoveToReady={moveToReady}
+                onRemoveFromReady={removeFromReady}
+              />
+            )}
+            {tab === "tracker" && (
+              <DailyTrackerTab items={trackerItems} onWear={logWear} onList={moveToReady} />
+            )}
+            {tab === "buy" && (
+              <BuyTab items={wardrobeItems} onScoreAdjust={handleScoreAdjust} />
+            )}
+            {tab === "trade" && (
+              <TradeTab readyItems={readyItems} onTradeComplete={handleTradeComplete} />
+            )}
+            {tab === "stores" && <StoresTab />}
           </motion.div>
         </AnimatePresence>
       </div>
 
-      {/* Bottom navigation dock */}
-      <nav className="fixed inset-x-0 bottom-6 z-40 flex justify-center px-4">
-        <div className="flex items-center gap-1 rounded-full border border-border bg-card/80 p-1.5 shadow-lg backdrop-blur-md">
+      <nav className="fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
+        <div
+          className={cn(
+            "flex items-center gap-0.5 rounded-full p-1 backdrop-blur-sm",
+            champagneBorder,
+            "bg-gradient-to-b from-[#FFFFF8]/96 to-[#F8F1E5]/94 shadow-[0_12px_40px_rgba(201,169,106,0.2),0_2px_8px_rgba(180,120,90,0.08)]",
+          )}
+        >
           {tabs.map(({ id, label, icon: Icon }) => {
             const isActive = tab === id
             return (
               <button
                 key={id}
+                type="button"
                 onClick={() => setTab(id)}
                 className={cn(
-                  "relative flex items-center gap-2 rounded-full px-3 py-2.5 text-sm font-medium transition-colors sm:px-3.5",
-                  isActive ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+                  "relative flex items-center gap-1.5 rounded-full px-3.5 py-2.5 text-[13px] font-medium transition-colors sm:gap-2 sm:px-4",
+                  isActive ? "text-[#FFFFF8]" : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {isActive && (
                   <motion.span
                     layoutId="dock-pill"
-                    className="absolute inset-0 rounded-full bg-primary"
+                    className="absolute inset-0 rounded-full bg-gradient-to-b from-[#6A7A60] to-[#54634C] shadow-[0_3px_12px_rgba(94,110,85,0.36),inset_0_1px_0_rgba(232,214,170,0.5)] ring-1 ring-[rgba(212,180,118,0.5)]"
                     transition={{ type: "spring", stiffness: 380, damping: 32 }}
                   />
                 )}
-                <Icon className="relative z-10 h-4 w-4" />
-                <span className="relative z-10 hidden sm:inline">{label}</span>
+                <Icon className="relative z-10 h-4 w-4 shrink-0" strokeWidth={isActive ? 2.25 : 1.75} />
+                <span className={cn("relative z-10 tracking-wide", !isActive && "hidden sm:inline")}>{label}</span>
               </button>
             )
           })}
         </div>
       </nav>
     </main>
-  )
-}
-
-export default function Page() {
-  return (
-    <AuthProvider>
-      <AppShell />
-    </AuthProvider>
   )
 }

@@ -1,44 +1,35 @@
 /**
- * WearAware API layer — wired to the Express/Supabase backend at localhost:3000.
- * All calls include the JWT token stored in localStorage.
- * Falls back gracefully when the backend is offline.
+ * WearAware API layer — connects to the Express backend at port 3000.
+ *
+ * Auth tokens are stored in localStorage and sent as Bearer headers.
+ * Every call fails gracefully with a mock fallback when the server is offline.
  */
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api"
 
-// ─── Token helpers ────────────────────────────────────────────────────────────
-
+// ── Token / user helpers ──────────────────────────────────────────────────────
 export function getToken(): string | null {
   if (typeof window === "undefined") return null
   return localStorage.getItem("wa_token")
 }
-
-export function setToken(token: string): void {
+export function setToken(token: string) {
   localStorage.setItem("wa_token", token)
 }
-
-export function clearToken(): void {
+export function clearToken() {
   localStorage.removeItem("wa_token")
   localStorage.removeItem("wa_user")
 }
-
-export function setUser(user: { id: string; email?: string }): void {
+export function setUser(user: object) {
   localStorage.setItem("wa_user", JSON.stringify(user))
 }
-
-export function getUser(): { id: string; email?: string } | null {
+export function getUser(): Record<string, unknown> | null {
   if (typeof window === "undefined") return null
-  const u = localStorage.getItem("wa_user")
-  return u ? JSON.parse(u) : null
+  const raw = localStorage.getItem("wa_user")
+  return raw ? JSON.parse(raw) : null
 }
 
-// ─── Core fetch wrapper ───────────────────────────────────────────────────────
-
-async function apiFetch<T>(
-  path: string,
-  options: RequestInit = {},
-  fallback: T,
-): Promise<T> {
+// ── Core fetch wrapper ────────────────────────────────────────────────────────
+async function apiFetch<T>(path: string, options: RequestInit = {}, fallback: T): Promise<T> {
   const token = getToken()
   try {
     const res = await fetch(`${API_BASE}${path}`, {
@@ -49,305 +40,136 @@ async function apiFetch<T>(
         ...(options.headers || {}),
       },
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      console.warn(`[WearAware API] ${path} → ${res.status}`, err)
-      return fallback
-    }
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
     const data = await res.json()
     return data.data ?? data
   } catch (err) {
-    console.warn(`[WearAware API] ${path} offline →`, (err as Error).message)
+    console.warn(`[api] ${path} fell back to mock:`, (err as Error).message)
     return fallback
   }
 }
 
-// ─── Auth ─────────────────────────────────────────────────────────────────────
-
-export async function register(email: string, password: string, username: string) {
-  try {
-    const res = await fetch(`${API_BASE}/auth/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, username }),
-    })
-    const data = await res.json()
-    if (!res.ok) return { ok: false, error: data.error || "Registration failed" }
-    if (data.data?.session?.access_token) {
-      setToken(data.data.session.access_token)
-      setUser(data.data.user)
-    }
-    return { ok: true, data: data.data }
-  } catch {
-    return { ok: false, error: "Cannot reach server" }
+// ── Auth ──────────────────────────────────────────────────────────────────────
+export async function apiLogin(email: string, password: string) {
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  })
+  const data = await res.json()
+  if (data.success) {
+    setToken(data.data.session.access_token)
+    setUser(data.data.user)
   }
+  return data
 }
 
-export async function login(email: string, password: string) {
-  try {
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    })
-    const data = await res.json()
-    if (!res.ok) return { ok: false, error: data.error || "Login failed" }
-    if (data.data?.session?.access_token) {
-      setToken(data.data.session.access_token)
-      setUser(data.data.user)
-    }
-    return { ok: true, data: data.data }
-  } catch {
-    return { ok: false, error: "Cannot reach server" }
-  }
+export async function apiRegister(email: string, password: string, username: string) {
+  const res = await fetch(`${API_BASE}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, username }),
+  })
+  return res.json()
 }
 
-export function logout(): void {
+export function apiLogout() {
   clearToken()
 }
 
-// ─── Wardrobe ─────────────────────────────────────────────────────────────────
-
-export interface BackendItem {
+// ── Wardrobe ──────────────────────────────────────────────────────────────────
+export interface WardrobeItem {
   id: string
-  name: string
-  brand: string | null
-  category: string
-  color: string | null
-  material: string | null
-  condition: string
-  wear_count?: number
-  image_urls: string[]
-  ai_tags: string[]
-  is_active: boolean
-  created_at: string
-}
-
-export async function fetchWardrobe(category?: string): Promise<BackendItem[]> {
-  const q = category ? `?category=${encodeURIComponent(category)}&limit=100` : "?limit=100"
-  return apiFetch<BackendItem[]>(`/wardrobe${q}`, {}, [])
-}
-
-export async function addWardrobeItem(item: {
   name: string
   brand?: string
   category: string
   color?: string
   material?: string
   condition?: string
+  purchase_year?: number
+  purchase_price?: number
+  wear_count?: number
   image_urls?: string[]
-}): Promise<BackendItem | null> {
-  return apiFetch<BackendItem | null>("/wardrobe", {
+  is_active?: boolean
+  created_at?: string
+}
+
+export async function fetchWardrobe(params?: { category?: string; limit?: number }): Promise<WardrobeItem[]> {
+  const q = new URLSearchParams()
+  if (params?.category) q.set("category", params.category)
+  if (params?.limit) q.set("limit", String(params.limit))
+  const result = await apiFetch<{ items?: WardrobeItem[] } | WardrobeItem[]>(`/wardrobe?${q}`, {}, [])
+  return Array.isArray(result) ? result : (result.items ?? [])
+}
+
+export async function addWardrobeItem(item: Partial<WardrobeItem>): Promise<WardrobeItem | null> {
+  return apiFetch("/wardrobe", { method: "POST", body: JSON.stringify(item) }, null)
+}
+
+export async function updateWardrobeItem(id: string, updates: Partial<WardrobeItem>): Promise<WardrobeItem | null> {
+  return apiFetch(`/wardrobe/${id}`, { method: "PATCH", body: JSON.stringify(updates) }, null)
+}
+
+export async function deleteWardrobeItem(id: string): Promise<void> {
+  return apiFetch(`/wardrobe/${id}`, { method: "DELETE" }, undefined)
+}
+
+export async function logWear(itemId: string, worn_on?: string, occasion?: string) {
+  return apiFetch(`/wardrobe/${itemId}/wear`, {
     method: "POST",
-    body: JSON.stringify(item),
-  }, null)
+    body: JSON.stringify({ worn_on: worn_on ?? new Date().toISOString().split("T")[0], occasion }),
+  }, { ok: true })
 }
 
-export async function logWear(itemId: string, occasion?: string): Promise<boolean> {
-  const result = await apiFetch<{ id: string } | null>(`/wardrobe/${itemId}/wear`, {
-    method: "POST",
-    body: JSON.stringify({ occasion }),
-  }, null)
-  return result !== null
-}
-
-// Legacy alias used by daily-tracker-tab
-export async function logDailyWear(itemId: string): Promise<{ ok: boolean }> {
-  const ok = await logWear(itemId)
-  return { ok }
-}
-
-// Legacy alias used by wardrobe-tab
-export async function fetchCategoryItems(category: string): Promise<BackendItem[]> {
-  return fetchWardrobe(category)
-}
-
-// Not in backend yet (AI teammate handles this) — kept for compatibility
-export async function uploadClothingItem(base64: string): Promise<{ ok: boolean; id?: string }> {
-  console.log("[WearAware] uploadClothingItem: AI endpoint not yet live, using mock")
-  return { ok: true, id: crypto.randomUUID() }
-}
-
-// ─── Sustainability ────────────────────────────────────────────────────────────
-
+// ── Sustainability Score ──────────────────────────────────────────────────────
 export interface SustainabilityScore {
   score: number
   grade: string
-  items_analysed: number
-  updated_at: string
+  updated_at?: string
+  breakdown?: Record<string, unknown>
 }
 
-export interface ScoreBreakdown {
-  base_score: number
-  final_score: number
-  grade: string
-  total_penalty: number
-  total_bonus: number
-  items_analysed: number
-  summary: string[]
-  penalties: {
-    wardrobe_size:   { total_items: number; items_over_threshold: number; penalty: number; description: string }
-    fast_fashion:    { items_count: number; brands_found: string[]; penalty: number; description: string }
-    similar_items:   { penalty: number; description: string }
-    low_utilisation: { items_count: number; penalty: number; description: string }
-  }
-  bonuses: {
-    high_wear: { items_count: number; bonus: number; description: string }
-  }
+export async function fetchScore(): Promise<SustainabilityScore> {
+  return apiFetch("/sustainability/score", {}, { score: 50, grade: "C" })
 }
 
-export async function fetchScore(): Promise<SustainabilityScore | null> {
-  return apiFetch<SustainabilityScore | null>("/sustainability/score", {}, null)
+export async function computeScore(): Promise<SustainabilityScore> {
+  return apiFetch("/sustainability/compute", { method: "POST" }, { score: 50, grade: "C" })
 }
 
-export async function computeScore(): Promise<{ score: number; grade: string; breakdown: ScoreBreakdown } | null> {
-  return apiFetch<{ score: number; grade: string; breakdown: ScoreBreakdown } | null>(
-    "/sustainability/compute",
-    { method: "POST", body: JSON.stringify({}) },
-    null,
-  )
+// ── Analytics ─────────────────────────────────────────────────────────────────
+export async function fetchAnalyticsSummary() {
+  return apiFetch("/analytics/summary", {}, {
+    wardrobe: { total_items: 0, never_worn: 0, total_value: 0, monthly_wear_trend: [], category_breakdown: [] },
+    insights: [],
+  })
 }
 
-export async function fetchBreakdown(): Promise<ScoreBreakdown | null> {
-  return apiFetch<ScoreBreakdown | null>("/sustainability/breakdown", {}, null)
+// ── Matching / Marketplace ────────────────────────────────────────────────────
+export async function fetchMyRtpw() {
+  return apiFetch("/matching/rtpw", {}, [])
 }
 
-export async function getPurchaseAdvice(opts: {
-  item_description?: string
-  brand?: string
-  material?: string
-  is_second_hand?: boolean
-  is_local_brand?: boolean
-}) {
-  return apiFetch<{
-    advice_log_id: string
-    verdict: string
-    reasons: string[]
-    estimated_score_delta: number
-    fast_fashion_warning: string | null
-    tip: string
-  } | null>("/sustainability/advice", {
+export async function addToRtpw(item_id: string, preference?: string, notes?: string) {
+  return apiFetch("/matching/rtpw", { method: "POST", body: JSON.stringify({ item_id, preference, notes }) }, null)
+}
+
+export async function addWantedItem(payload: { category: string; description?: string; preferred_colors?: string[] }) {
+  return apiFetch("/matching/wanted", { method: "POST", body: JSON.stringify(payload) }, null)
+}
+
+export async function searchMatches(wanted_id: string) {
+  return apiFetch(`/matching/search/${wanted_id}`, { method: "POST" }, [])
+}
+
+export async function proposeMatch(rtpw_item_id: string, wanted_item_id: string) {
+  return apiFetch("/matching/propose", {
     method: "POST",
-    body: JSON.stringify({
-      item_description: opts.item_description,
-      brand: opts.brand,
-      material: opts.material,
-      is_second_hand: opts.is_second_hand ?? false,
-      is_local_brand: opts.is_local_brand ?? false,
-    }),
+    body: JSON.stringify({ rtpw_item_id, wanted_item_id }),
   }, null)
 }
 
-export async function fetchFastFashionBrands(): Promise<string[]> {
-  const data = await apiFetch<{ brands: string[] } | null>("/sustainability/fast-fashion-brands", {}, null)
-  return data?.brands ?? []
-}
-
-// ─── Analytics ────────────────────────────────────────────────────────────────
-
-export interface AnalyticsSummary {
-  score: { score: number; grade: string; updated_at: string } | null
-  wardrobe: {
-    total_items: number
-    never_worn_count: number
-    never_worn_pct: number
-    category_breakdown: { category: string; count: number }[]
-    material_breakdown: { material: string; count: number }[]
-    monthly_wear_trend: { month: string; count: number }[]
-    total_wardrobe_value: number
-    estimated_cost_per_wear: number | null
-  }
-  score_trend: { event_type: string; delta: number; score_after: number; created_at: string }[]
-  insights: { severity: string; message: string; action: string }[]
-}
-
-export async function fetchAnalyticsSummary(): Promise<AnalyticsSummary | null> {
-  return apiFetch<AnalyticsSummary | null>("/analytics/summary", {}, null)
-}
-
-// ─── Matching / RTPW ──────────────────────────────────────────────────────────
-
-export interface RtpwItem {
-  id: string
-  item_id: string
-  preference: string[]
-  notes: string | null
-  is_matched: boolean
-  added_at: string
-  clothing_items?: { name: string; category: string; color: string; image_urls: string[] }
-}
-
-export interface WantedItem {
-  id: string
-  description: string
-  category: string | null
-  preferred_colors: string[]
-  preferred_brands: string[]
-}
-
-export interface MatchCandidate {
-  rtpw_id: string
-  item_id: string
-  offering_user_id: string
-  category: string
-  color: string | null
-  match_score: number
-}
-
-export async function fetchMyRtpw(): Promise<RtpwItem[]> {
-  return apiFetch<RtpwItem[]>("/matching/rtpw", {}, [])
-}
-
-export async function addToRtpw(itemId: string, preference = ["swap"]): Promise<boolean> {
-  const result = await apiFetch<{ id: string } | null>("/matching/rtpw", {
-    method: "POST",
-    body: JSON.stringify({ item_id: itemId, preference }),
-  }, null)
-  return result !== null
-}
-
-export async function addWantedItem(opts: {
-  description: string
-  category?: string
-  preferred_colors?: string[]
-  preferred_brands?: string[]
-}): Promise<WantedItem | null> {
-  return apiFetch<WantedItem | null>("/matching/wanted", {
-    method: "POST",
-    body: JSON.stringify(opts),
-  }, null)
-}
-
-export async function searchMatches(wantedItemId: string): Promise<MatchCandidate[]> {
-  return apiFetch<MatchCandidate[]>(`/matching/search/${wantedItemId}`, { method: "POST", body: "{}" }, [])
-}
-
-export async function proposeMatch(opts: {
-  rtpw_id: string
-  receiving_user_id: string
-  match_score?: number
-}): Promise<{ match_id: string } | null> {
-  return apiFetch<{ match_id: string } | null>("/matching/propose", {
-    method: "POST",
-    body: JSON.stringify(opts),
-  }, null)
-}
-
-export async function acceptMatch(matchId: string): Promise<boolean> {
-  const result = await apiFetch<{ message: string } | null>(`/matching/matches/${matchId}/accept`, {
-    method: "POST", body: "{}",
-  }, null)
-  return result !== null
-}
-
-// Legacy alias used by marketplace-tab
-export async function executeTrade(itemId: string, matchUserId: string): Promise<{ ok: boolean }> {
-  const result = await proposeMatch({ rtpw_id: itemId, receiving_user_id: matchUserId, match_score: 80 })
-  return { ok: result !== null }
-}
-
-// ─── Partner Stores ───────────────────────────────────────────────────────────
-
+// ── Partner Stores ────────────────────────────────────────────────────────────
 export interface PartnerStore {
   id: string
   name: string
@@ -361,13 +183,29 @@ export interface PartnerStore {
 
 export async function fetchStores(city?: string): Promise<PartnerStore[]> {
   const q = city ? `?city=${encodeURIComponent(city)}` : ""
-  return apiFetch<PartnerStore[]>(`/stores${q}`, {}, [])
+  return apiFetch(`/stores${q}`, {}, [])
 }
 
-export async function donateToStore(storeId: string, itemId: string): Promise<boolean> {
-  const result = await apiFetch<{ donation: unknown } | null>("/stores/donate", {
+// ── Legacy stubs (backward compat with existing Shaurya UI components) ────────
+export async function uploadClothingItem(base64: string): Promise<{ ok: boolean; id?: string }> {
+  return apiFetch("/wardrobe/upload", {
     method: "POST",
-    body: JSON.stringify({ store_id: storeId, item_id: itemId }),
-  }, null)
-  return result !== null
+    body: JSON.stringify({ image: base64 }),
+  }, { ok: true, id: crypto.randomUUID() })
+}
+
+export async function fetchCategoryItems(category: string): Promise<unknown[]> {
+  return fetchWardrobe({ category })
+}
+
+export async function logDailyWear(itemId: string): Promise<{ ok: boolean }> {
+  await logWear(itemId)
+  return { ok: true }
+}
+
+export async function executeTrade(itemId: string, matchUserId: string): Promise<{ ok: boolean }> {
+  return apiFetch("/matching/propose", {
+    method: "POST",
+    body: JSON.stringify({ rtpw_item_id: itemId, wanted_item_id: matchUserId }),
+  }, { ok: true })
 }
