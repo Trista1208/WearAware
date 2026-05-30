@@ -8,11 +8,11 @@ export async function register(req: Request, res: Response): Promise<void> {
     username: string;
   };
 
-  // Check username uniqueness before creating auth user
+  // Check name uniqueness before creating auth user
   const { data: existing } = await supabaseAdmin
     .from('profiles')
     .select('id')
-    .eq('username', username)
+    .eq('name', username)
     .single();
 
   if (existing) {
@@ -27,10 +27,10 @@ export async function register(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  // Create profile row (id matches auth.users id)
+  // Create profile row — using actual Supabase schema column 'name'
   const { error: profileError } = await supabaseAdmin
     .from('profiles')
-    .insert({ id: data.user.id, username });
+    .insert({ id: data.user.id, name: username });
 
   if (profileError) {
     // Roll back auth user if profile creation fails

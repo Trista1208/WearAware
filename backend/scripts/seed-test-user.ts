@@ -134,10 +134,11 @@ async function main() {
   // ── 2. Upsert profile ────────────────────────────────────────────────────────
   console.log('👤  Upserting profile...');
   const { error: profileError } = await admin.from('profiles').upsert({
-    id:           userId,
-    username:     TEST_USERNAME,
-    display_name: 'Demo User',
-    updated_at:   new Date().toISOString(),
+    id:              userId,
+    name:            TEST_USERNAME,
+    gender:          'prefer_not_to_say',
+    sustainable_goal: true,
+    updated_at:      new Date().toISOString(),
   }, { onConflict: 'id' });
 
   if (profileError) {
