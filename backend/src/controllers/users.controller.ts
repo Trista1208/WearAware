@@ -5,18 +5,17 @@ import { AuthRequest } from '../types';
 export async function getMyProfile(req: AuthRequest, res: Response): Promise<void> {
   const userId = req.user!.id;
 
-  const { data, error } = await supabaseAdmin
-    .from('profiles')
-    .select('*, sustainability_scores(score, grade, updated_at)')
-    .eq('id', userId)
-    .single();
+  const [{ data: profile, error: profileError }, { data: scores }] = await Promise.all([
+    supabaseAdmin.from('profiles').select('*').eq('id', userId).single(),
+    supabaseAdmin.from('sustainability_scores').select('score, grade, updated_at').eq('user_id', userId).order('updated_at', { ascending: false }).limit(1),
+  ]);
 
-  if (error || !data) {
+  if (profileError || !profile) {
     res.status(404).json({ success: false, error: 'Profile not found' });
     return;
   }
 
-  res.json({ success: true, data });
+  res.json({ success: true, data: { ...profile, sustainability_scores: scores || [] } });
 }
 
 export async function updateMyProfile(req: AuthRequest, res: Response): Promise<void> {
@@ -40,18 +39,25 @@ export async function updateMyProfile(req: AuthRequest, res: Response): Promise<
 export async function getPublicProfile(req: AuthRequest, res: Response): Promise<void> {
   const { username } = req.params;
 
-  const { data, error } = await supabaseAdmin
+  const { data: profile, error } = await supabaseAdmin
     .from('profiles')
-    .select('id, username, display_name, avatar_url, bio, style_tags, location_city, location_country, sustainability_scores(score, grade)')
-    .eq('username', username)
+    .select('id, name, gender, profession, sustainable_goal, fashion_style')
+    .eq('name', username)
     .single();
 
-  if (error || !data) {
+  if (error || !profile) {
     res.status(404).json({ success: false, error: 'User not found' });
     return;
   }
 
-  res.json({ success: true, data });
+  const { data: scores } = await supabaseAdmin
+    .from('sustainability_scores')
+    .select('score, grade')
+    .eq('user_id', profile.id)
+    .order('updated_at', { ascending: false })
+    .limit(1);
+
+  res.json({ success: true, data: { ...profile, sustainability_scores: scores || [] } });
 }
 
 export async function getMyConnections(req: AuthRequest, res: Response): Promise<void> {
@@ -63,8 +69,8 @@ export async function getMyConnections(req: AuthRequest, res: Response): Promise
       id,
       connected_at,
       match_id,
-      user_a:user_a_id(id, username, display_name, avatar_url),
-      user_b:user_b_id(id, username, display_name, avatar_url)
+      user_a:user_a_id(id, name),
+      user_b:user_b_id(id, name)
     `)
     .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
     .order('connected_at', { ascending: false });
